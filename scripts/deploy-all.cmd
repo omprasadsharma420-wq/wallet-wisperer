@@ -24,13 +24,6 @@ if "%OPENAI_MODEL%"=="" set "OPENAI_MODEL=gpt-4.1-mini"
 echo Setting OPENAI_MODEL...
 call "%~dp0supabase.cmd" secrets set OPENAI_MODEL="%OPENAI_MODEL%" || exit /b 1
 
-if not "%INBOUND_EMAIL_SECRET%"=="" (
-  echo Setting INBOUND_EMAIL_SECRET...
-  call "%~dp0supabase.cmd" secrets set INBOUND_EMAIL_SECRET="%INBOUND_EMAIL_SECRET%" || exit /b 1
-) else (
-  echo Skipping INBOUND_EMAIL_SECRET because the environment variable is not set.
-)
-
 echo Deploying Edge Functions...
 call "%~dp0deploy-functions.cmd" || exit /b 1
 

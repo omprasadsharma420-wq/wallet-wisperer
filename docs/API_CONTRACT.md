@@ -8,7 +8,7 @@ Authorization: Bearer {supabase-session-access-token}
 Content-Type: application/json
 ```
 
-The `inbound-email` endpoint is the only public webhook. It requires `INBOUND_EMAIL_SECRET` and only accepts emails whose `from` address matches a forwarding address the user registered on their profile (`profiles.inbound_from_email`). The target account is derived from that registered address, never from the request body.
+All V1 app endpoints require a signed-in Supabase user except `health`.
 
 ## Data Model Summary
 
@@ -187,9 +187,7 @@ Lower-level copy endpoint. The normal app should call `close-day` instead.
 
 ## Function: inbound-email
 
-Webhook for a future inbound email provider or hackathon simulation. It is intentionally not Gmail/Outlook inbox scanning.
-
-The `from` address must match a registered `profiles.inbound_from_email`; unregistered senders get `403`. The target account is derived from that match. If a `user_id` is also supplied it must belong to the same account, otherwise the request is rejected.
+Authenticated import endpoint for pasted/forwarded transaction email text. This is intentionally not a public Mailgun/SendGrid webhook and not Gmail/Outlook inbox scanning.
 
 ```http
 POST /functions/v1/inbound-email
@@ -199,8 +197,7 @@ Request:
 
 ```json
 {
-  "secret": "shared-webhook-secret",
-  "from": "registered-user@example.com",
+  "from": "bank@example.com",
   "subject": "Payment alert",
   "text": "Paid NPR 250 at Momo Ghar via wallet",
   "default_currency": "NPR"

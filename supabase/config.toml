@@ -39,7 +39,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.inbound-email]
-verify_jwt = false
+verify_jwt = true
 
 [functions.nightly-review]
 verify_jwt = true

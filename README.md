@@ -48,9 +48,9 @@ The codebase is ready to wire to a real Supabase project, but deployment require
 2. Supabase database password if `supabase link` asks for it.
 3. Supabase project URL and anon public key for Bolt and smoke tests.
 4. OpenAI API key for AI parsing/report copy.
-5. Inbound email secret for the simulated forwarded-email webhook.
+5. A confirmed test user if email confirmation is enabled and you want to run hosted smoke tests.
 
-The OpenAI key and inbound email secret must be stored only as Supabase Edge Function secrets. The frontend should only receive the Supabase URL and anon public key.
+The OpenAI key must be stored only as a Supabase Edge Function secret. The frontend should only receive the Supabase URL and anon public key.
 
 ## Local Validation
 

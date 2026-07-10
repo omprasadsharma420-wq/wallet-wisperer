@@ -60,7 +60,6 @@ supabase/migrations/202607100002_demo_seed.sql
 ```powershell
 .\scripts\supabase.cmd secrets set OPENAI_API_KEY=sk-your-key
 .\scripts\supabase.cmd secrets set OPENAI_MODEL=gpt-4.1-mini
-.\scripts\supabase.cmd secrets set INBOUND_EMAIL_SECRET=make-a-long-random-string
 ```
 
 Supabase documents function secrets as environment variables for Edge Functions.
@@ -93,7 +92,6 @@ $env:SUPABASE_PROJECT_REF="lzbtttgggoxumbcjqqsu"
 $env:SUPABASE_DB_PASSWORD="your-remote-database-password-if-link-prompts"
 $env:OPENAI_API_KEY="sk-your-key"
 $env:OPENAI_MODEL="gpt-4.1-mini"
-$env:INBOUND_EMAIL_SECRET="make-a-long-random-string"
 .\scripts\deploy-all.cmd
 ```
 
@@ -146,6 +144,5 @@ Deployment cannot be completed until you provide or configure:
 - Supabase database password if `supabase link` prompts for it.
 - Supabase anon public key for frontend and hosted smoke tests.
 - OpenAI API key.
-- Inbound email secret.
 
 The local codebase can still be reviewed and handed to the frontend teammate before those credentials exist.

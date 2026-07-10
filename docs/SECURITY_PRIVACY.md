@@ -10,6 +10,7 @@ Wallet Whisperer handles sensitive financial behavior data. The V1 design keeps 
 - Creates AI drafts, not final transactions.
 - Lets users confirm, edit, or ignore every draft.
 - Supports user-forwarded/pasted transaction emails rather than full mailbox scanning.
+- Uses an authenticated `inbound-email` import endpoint for demo email text. It does not accept arbitrary `user_id` values.
 
 ## What V1 Does Not Do
 
@@ -48,13 +49,16 @@ auth.uid() = user_id
 
 The one exception is `profiles.id`, where the primary key is the user id.
 
-## Inbound Email Webhook
+## Inbound Email Import
 
-The `inbound-email` function is a public endpoint (`verify_jwt = false`) intended for an email provider such as Mailgun or SendGrid Inbound Parse. It is protected by two independent checks:
+The `inbound-email` function is not a public provider webhook in V1. It requires a signed-in Supabase user JWT and inserts drafts only for that authenticated user through RLS.
 
-1. The request must carry the shared `INBOUND_EMAIL_SECRET`.
-2. The email's `from` address must match a forwarding address the user registered on their own profile (`profiles.inbound_from_email`). The target account is derived from that match — the endpoint never trusts a caller-supplied `user_id`, so a leaked secret alone cannot be used to insert drafts into arbitrary accounts.
+A future provider webhook such as Mailgun or SendGrid Inbound Parse needs a separate design before launch: per-user forwarding addresses or aliases, sender verification, replay protection, and provider signature verification. Do not change `inbound-email` back to a public service-role endpoint that accepts `user_id` from the request body.
 
-Users who have not registered a forwarding address cannot receive inbound email drafts at all. Every accepted draft still lands as `needs_review = true` and only becomes a transaction after the user confirms it.
+## Notifications And Scheduling
 
-Known residual risk: email `from` headers can be spoofed by whoever holds the secret, so a compromised secret plus knowledge of a victim's registered address could forge a draft (never a confirmed transaction). Production hardening would add provider signature verification (e.g. Mailgun HMAC) and rotate the secret.
+V1 does not deliver native push notifications through APNs, FCM, or web push. The app uses an in-app nudge: when the user opens or foregrounds the app, the frontend calls `generate-recurring-drafts` and `nightly-review`, then shows the backend-owned copy such as `5 possible transactions found today. Review tonight?`
+
+The `notification_queue` table is a future delivery queue, not proof that push delivery has happened.
+
+Recurring fixed-expense draft generation and nightly review are pull-based in V1. They run when an authenticated client calls the Edge Functions, not from a global cron job.
