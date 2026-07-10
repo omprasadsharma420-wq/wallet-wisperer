@@ -72,7 +72,10 @@ assert(read("supabase/functions/generate-recurring-drafts/index.ts").includes("p
 assert(read("web-demo/index.html").includes("<script type=\"module\" src=\"./app.js\"></script>"), "web demo loads app module");
 assert(read("web-demo/app.js").includes("forwarded_email"), "web demo uses forwarded email source");
 assert(read("web-demo/app.js").includes("data-field=\"payment_method\""), "web demo exposes payment method review");
-assert(read("web-demo/styles.css").includes("grid-template-columns: repeat(5"), "web demo draft grid supports review fields");
+assert(read("web-demo/app.js").includes("data-field=\"currency\""), "web demo exposes per-draft currency");
+assert(read("web-demo/app.js").includes("rival-line"), "web demo shows Rival trade-off on draft cards");
+assert(read("web-demo/app.js").includes("notification_queue"), "web demo reads the nudge queue");
+assert(read("web-demo/styles.css").includes(".rival-line"), "web demo styles the Rival trade-off");
 assert(read("scripts/deployed-smoke-test.mjs").includes("Hosted smoke test passed"), "hosted smoke test script exists");
 assert(read("scripts/deploy-all.cmd").includes("db push"), "deploy-all pushes migrations");
 assert(read("scripts/serve-web-demo.mjs").includes("Wallet Whisperer demo"), "web demo server script exists");
