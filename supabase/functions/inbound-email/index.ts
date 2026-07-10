@@ -5,13 +5,19 @@ import { createServiceClient } from "../_shared/supabase.ts";
 
 type InboundEmailRequest = {
   secret?: string;
-  user_id: string;
+  user_id?: string;
   from?: string;
   subject?: string;
   text: string;
   source_reference?: string;
   default_currency?: string;
 };
+
+function extractEmailAddress(from: string): string | null {
+  const angled = from.match(/<([^<>\s]+@[^<>\s]+)>/);
+  const raw = (angled?.[1] ?? from).trim().toLowerCase();
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw) ? raw : null;
+}
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -25,11 +31,34 @@ Deno.serve(async (req) => {
       throw new HttpError(401, "Invalid inbound email secret.");
     }
 
-    if (!body.user_id || !body.text?.trim()) {
-      throw new HttpError(400, "user_id and text are required.");
+    if (!body.from || !body.text?.trim()) {
+      throw new HttpError(400, "from and text are required.");
+    }
+
+    const senderEmail = extractEmailAddress(body.from);
+    if (!senderEmail) {
+      throw new HttpError(400, "from must contain a valid email address.");
     }
 
     const serviceClient = createServiceClient();
+
+    // The account is identified by the sender's registered forwarding address,
+    // never by a caller-supplied user_id. Unregistered senders are rejected.
+    const { data: profile, error: profileError } = await serviceClient
+      .from("profiles")
+      .select("id")
+      .ilike("inbound_from_email", senderEmail)
+      .maybeSingle();
+
+    if (profileError) throw new HttpError(500, "Failed to verify sender.", profileError);
+    if (!profile) {
+      throw new HttpError(403, "Sender address is not registered for inbound capture.");
+    }
+    if (body.user_id && body.user_id !== profile.id) {
+      throw new HttpError(403, "Sender address does not belong to the requested user.");
+    }
+
+    const userId = profile.id;
     const { parsed, model } = await parseTransactionWithAi(
       `${body.subject ? `Subject: ${body.subject}\n` : ""}${body.text}`,
       body.default_currency ?? "NPR",
@@ -38,7 +67,7 @@ Deno.serve(async (req) => {
     const { data, error } = await serviceClient
       .from("smart_capture_drafts")
       .insert({
-        user_id: body.user_id,
+        user_id: userId,
         source: "forwarded_email",
         raw_text: body.text,
         raw_subject: body.subject ?? null,
@@ -62,7 +91,7 @@ Deno.serve(async (req) => {
     if (error) throw new HttpError(500, "Failed to create inbound email draft.", error);
 
     await serviceClient.from("capture_events").insert({
-      user_id: body.user_id,
+      user_id: userId,
       source: "forwarded_email",
       draft_id: data.id,
       event_name: "inbound_email_draft_created",

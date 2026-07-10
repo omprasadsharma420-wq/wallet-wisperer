@@ -50,4 +50,11 @@ The one exception is `profiles.id`, where the primary key is the user id.
 
 ## Inbound Email Webhook
 
-The `inbound-email` function requires `INBOUND_EMAIL_SECRET`. This is for a future provider such as Mailgun, SendGrid Inbound Parse, or a hackathon simulation. It is not open to the public.
+The `inbound-email` function is a public endpoint (`verify_jwt = false`) intended for an email provider such as Mailgun or SendGrid Inbound Parse. It is protected by two independent checks:
+
+1. The request must carry the shared `INBOUND_EMAIL_SECRET`.
+2. The email's `from` address must match a forwarding address the user registered on their own profile (`profiles.inbound_from_email`). The target account is derived from that match — the endpoint never trusts a caller-supplied `user_id`, so a leaked secret alone cannot be used to insert drafts into arbitrary accounts.
+
+Users who have not registered a forwarding address cannot receive inbound email drafts at all. Every accepted draft still lands as `needs_review = true` and only becomes a transaction after the user confirms it.
+
+Known residual risk: email `from` headers can be spoofed by whoever holds the secret, so a compromised secret plus knowledge of a victim's registered address could forge a draft (never a confirmed transaction). Production hardening would add provider signature verification (e.g. Mailgun HMAC) and rotate the secret.
