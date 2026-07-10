@@ -29,7 +29,8 @@ supabase/
   migrations/               Database schema, RLS, seed helpers
   functions/                Supabase Edge Functions
 docs/
-  API_CONTRACT.md           Frontend/Bolt integration contract
+  API_CONTRACT.md           Frontend API contract
+  CLAUDE_CODE_HANDOFF_PROMPT.md
   DEPLOYMENT.md             Setup and deployment steps
   SECURITY_PRIVACY.md       Privacy and platform boundaries
 scripts/
@@ -46,7 +47,7 @@ The codebase is ready to wire to a real Supabase project, but deployment require
 
 1. Supabase CLI access token or `SUPABASE_ACCESS_TOKEN`.
 2. Supabase database password if `supabase link` asks for it.
-3. Supabase project URL and anon public key for Bolt and smoke tests.
+3. Supabase project URL and anon public key for the web frontend and smoke tests.
 4. OpenAI API key for AI parsing/report copy.
 5. A confirmed test user if email confirmation is enabled and you want to run hosted smoke tests.
 

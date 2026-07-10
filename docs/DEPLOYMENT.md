@@ -8,7 +8,7 @@ Create a Supabase project in the dashboard. Copy:
 - anon public key
 - service role key
 
-The service role key is for local deployment/admin only. Never expose it in Bolt/frontend.
+The service role key is for local deployment/admin only. Never expose it in the frontend.
 
 ## 2. Install Supabase CLI
 
@@ -97,9 +97,11 @@ $env:OPENAI_MODEL="gpt-4.1-mini"
 
 The wrapper links the project, pushes migrations, sets available secrets, and deploys all Edge Functions.
 
-## 7. Wire Bolt
+## 7. Wire The Frontend
 
-In Bolt or the frontend host, set:
+For the current `web-demo`, the live Supabase URL and public key are already the defaults in `web-demo/app.js`.
+
+For another web/mobile frontend, set:
 
 ```text
 VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
@@ -142,7 +144,7 @@ Deployment cannot be completed until you provide or configure:
 
 - Supabase access token for CLI deployment.
 - Supabase database password if `supabase link` prompts for it.
-- Supabase anon public key for frontend and hosted smoke tests.
+- Supabase anon public key for frontend/mobile clients and hosted smoke tests.
 - OpenAI API key.
 
-The local codebase can still be reviewed and handed to the frontend teammate before those credentials exist.
+The local codebase can still be reviewed and handed to the next engineer before those credentials exist.

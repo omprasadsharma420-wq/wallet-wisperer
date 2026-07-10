@@ -10,7 +10,7 @@ Project URL: https://lzbtttgggoxumbcjqqsu.supabase.co
 Frontend public key: sb_publishable_v5pAWpqrnyLyEMlNeaZPAg_4xah6LqS
 ```
 
-The frontend public key is safe to use in Bolt, web, mobile, and desktop clients. Do not put access tokens, database passwords, service role keys, or secret keys in the frontend.
+The frontend public key is safe to use in web, mobile, and desktop clients. Do not put access tokens, database passwords, service role keys, or secret keys in the frontend.
 
 ## Completed
 
@@ -46,6 +46,6 @@ There is no global cron job for recurring expenses yet. The frontend is responsi
 
 - Replace `OPENAI_API_KEY` with a valid OpenAI API key.
 - Run hosted smoke test again and confirm draft model is `gpt-4.1-mini` instead of `heuristic-fallback-v1`.
-- Build the production frontend in Bolt/mobile-responsive UI.
+- Continue polishing the current `web-demo` frontend or port it into the team's final production frontend.
 
 Until a valid `OPENAI_API_KEY` is set, the deployed backend still works using heuristic fallback parsing and fallback report copy.

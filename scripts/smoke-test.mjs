@@ -76,6 +76,7 @@ assert(read("web-demo/index.html").includes("<script type=\"module\" src=\"./app
 assert(!read("web-demo/index.html").includes("Forwarded Email"), "web demo removes forwarded email panel");
 assert(read("web-demo/index.html").includes("view-money"), "web demo includes Expense and Income tab");
 assert(read("web-demo/index.html").includes("view-stats"), "web demo includes Stats tab");
+assert(!read("README.md").includes("Bolt"), "README no longer points to Bolt integration");
 assert(read("web-demo/app.js").includes("data-field=\"payment_method\""), "web demo exposes payment method review");
 assert(read("web-demo/app.js").includes("rivalTradeoffHtml"), "web demo shows Rival tradeoff before confirmation");
 assert(read("web-demo/app.js").includes("generate-recurring-drafts"), "web demo calls recurring draft generation");
@@ -89,7 +90,7 @@ assert(read("scripts/serve-web-demo.mjs").includes("Wallet Whisperer demo"), "we
 
 const docs = [
   "docs/API_CONTRACT.md",
-  "docs/BOLT_INTEGRATION.md",
+  "docs/CLAUDE_CODE_HANDOFF_PROMPT.md",
   "docs/DEPLOYMENT.md",
   "docs/SECURITY_PRIVACY.md",
   "docs/PRODUCT_FOUNDATION.md",
