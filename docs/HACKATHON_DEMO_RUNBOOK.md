@@ -12,12 +12,16 @@ Five possible transactions found today. Review tonight?
 
 ## 90 Second Flow
 
-1. Open the app and show the Rival goal.
+1. Open the app and show the Rival goal with its photo.
 2. Paste a bank or wallet message into Smart Capture.
 3. Create a draft and point out that AI did not finalize anything.
-4. Open Nightly Review and show the editable draft card.
-5. Confirm the draft.
-6. Close the day and show total spend, protected amount, streak, and the Rival insight.
+4. Open Nightly Review. The draft card shows the trade-off live: "NPR 250 = 1.0% of Pokhara Trip". Change necessity to fixed and show the trade-off disappear, because fixed costs never count against the Rival.
+5. Tick "Skipped it" on one card and show the amount turn into protected money toward the goal.
+6. Confirm the drafts. The summary repeats each trade-off using the backend-calculated percent.
+7. Press Nightly Review to queue the nudge and show the in-app banner.
+8. Close the day and show total spend, protected amount, streak, and the Rival insight.
+
+Before the demo: pre-create and confirm the demo account. Signup on stage risks the auth email rate limit.
 
 ## Judge Narrative
 
