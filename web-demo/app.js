@@ -4,6 +4,20 @@ const DEFAULT_URL = "https://lzbtttgggoxumbcjqqsu.supabase.co";
 const DEFAULT_PUBLIC_KEY = "sb_publishable_v5pAWpqrnyLyEMlNeaZPAg_4xah6LqS";
 const CATEGORY_STORAGE_KEY = "ww_category_targets";
 
+const CURRENCIES = [
+  { code: "NPR", name: "Nepalese Rupee" },
+  { code: "USD", name: "US Dollar" },
+  { code: "INR", name: "Indian Rupee" },
+  { code: "EUR", name: "Euro" },
+  { code: "GBP", name: "British Pound" },
+  { code: "AUD", name: "Australian Dollar" },
+  { code: "CAD", name: "Canadian Dollar" },
+  { code: "AED", name: "UAE Dirham" },
+  { code: "SGD", name: "Singapore Dollar" },
+  { code: "JPY", name: "Japanese Yen" },
+  { code: "CNY", name: "Chinese Yuan" },
+];
+
 const CATEGORY_GROUPS = [
   {
     name: "Bills",
@@ -46,6 +60,7 @@ const state = {
   pendingCount: 0,
   categoryBudgets: [],
   selectedCategoryId: "phone-internet",
+  captureAttachment: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -57,7 +72,6 @@ const els = {
   viewTitle: $("#viewTitle"),
   sidePending: $("#sidePending"),
   nightlyLine: $("#nightlyLine"),
-  rivalLine: $("#rivalLine"),
   reviewLine: $("#reviewLine"),
   locationLine: $("#locationLine"),
   nudgeBar: $("#nudgeBar"),
@@ -78,9 +92,6 @@ const els = {
   statsRings: $("#statsRings"),
   ringCenterValue: $("#ringCenterValue"),
   statsCenterValue: $("#statsCenterValue"),
-  budgetValue: $("#budgetValue"),
-  expenseValue: $("#expenseValue"),
-  remainingValue: $("#remainingValue"),
   budgetMonth: $("#budgetMonth"),
   incomeTotalValue: $("#incomeTotalValue"),
   assignedLine: $("#assignedLine"),
@@ -96,6 +107,8 @@ const els = {
   targetProgressBar: $("#targetProgressBar"),
   statsCategoryList: $("#statsCategoryList"),
   statsBudgetStatus: $("#statsBudgetStatus"),
+  attachName: $("#attachName"),
+  attachClearBtn: $("#attachClearBtn"),
 };
 
 function showAlert(message, tone = "info") {
@@ -143,6 +156,18 @@ function currency(value = "NPR") {
 function money(amount, code = "NPR") {
   if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return "-";
   return `${currency(code)} ${Number(amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+function currencyOptionsHtml(selected = "NPR") {
+  const code = currency(selected);
+  const known = CURRENCIES.some((item) => item.code === code);
+  const list = known ? CURRENCIES : [{ code, name: code }, ...CURRENCIES];
+  return list.map((item) => `<option value="${item.code}" ${item.code === code ? "selected" : ""}>${item.code} - ${item.name}</option>`).join("");
+}
+
+function populateCurrencySelect(id, selected) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = currencyOptionsHtml(selected);
 }
 
 function pct(value) {
@@ -346,6 +371,26 @@ async function loadProfile() {
   const { data, error } = await requireClient().from("profiles").select("*").maybeSingle();
   if (error) throw error;
   state.profile = data;
+  refreshCurrencyDefaults();
+}
+
+function refreshCurrencyDefaults() {
+  const code = state.profile?.default_currency || "NPR";
+  populateCurrencySelect("profileCurrency", code);
+  populateCurrencySelect("incomeCurrency", code);
+  populateCurrencySelect("recurringCurrency", code);
+}
+
+async function saveProfileCurrency() {
+  const userId = state.session?.user?.id;
+  if (!userId) throw new Error("Sign in first.");
+  const code = currency($("#profileCurrency").value || "NPR");
+  const { error } = await requireClient().from("profiles").update({ default_currency: code }).eq("id", userId);
+  if (error) throw error;
+  await loadProfile();
+  renderFinanceRings();
+  renderBudgetPlan();
+  showAlert("Default currency saved.");
 }
 
 async function loadGoal() {
@@ -462,19 +507,17 @@ function renderGoal() {
   const goal = state.goal;
   if (!goal) {
     els.goalStatus.textContent = "No active goal";
-    els.goalPreview.innerHTML = "<p class=\"draft-meta\">Create one goal in Expense and Income.</p>";
-    els.rivalLine.textContent = "Create a Rival goal to make flexible spending visible.";
+    els.goalPreview.innerHTML = "<p class=\"draft-meta\">Create a Rival goal in Expense and Income to make flexible spending visible.</p>";
     renderFinanceRings();
     return;
   }
 
   $("#goalName").value = goal.name || "";
   $("#goalAmount").value = goal.target_amount || "";
-  $("#goalCurrency").value = goal.currency || "NPR";
+  populateCurrencySelect("goalCurrency", goal.currency || "NPR");
 
   const percent = goal.target_amount ? pct((Number(goal.current_saved_amount || 0) / Number(goal.target_amount)) * 100) : 0;
   els.goalStatus.textContent = `${percent.toFixed(1)}% funded`;
-  els.rivalLine.textContent = `Flexible spending is measured against ${goal.name}.`;
   els.goalPreview.innerHTML = `
     <div class="goal-row"><strong>${escapeHtml(goal.name)}</strong><span>${money(goal.target_amount, goal.currency)}</span></div>
     <div class="progress"><span style="width:${percent}%"></span></div>
@@ -582,17 +625,54 @@ function renderStatsBreakdown(code = currency(state.profile?.default_currency ||
   }).join("");
 }
 
-async function createDraft(source, rawText, subject = null) {
+async function createDraft(source, rawText, subject = null, sourceReference = null) {
   if (!rawText.trim()) throw new Error("Add transaction text first.");
   const data = await invoke("create-draft", {
     source,
     raw_text: rawText,
     raw_subject: subject,
+    source_reference: sourceReference,
     default_currency: state.profile?.default_currency || state.goal?.currency || "NPR",
   });
   showAlert(`Draft created via ${data.draft?.model || "parser"}.`);
   await nightlyReview(false);
   switchView("review");
+  return data;
+}
+
+function setCaptureAttachment(file) {
+  state.captureAttachment = file || null;
+  if (els.attachName) {
+    els.attachName.textContent = file ? file.name : "";
+    els.attachName.classList.toggle("hidden", !file);
+  }
+  if (els.attachClearBtn) els.attachClearBtn.classList.toggle("hidden", !file);
+}
+
+async function uploadCaptureAttachment(file) {
+  const userId = state.session?.user?.id;
+  if (!userId) throw new Error("Sign in first.");
+  const extension = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${userId}/${Date.now()}.${extension}`;
+  const { error } = await requireClient().storage
+    .from("receipt-uploads")
+    .upload(path, file, { contentType: file.type });
+  if (error) throw error;
+  return path;
+}
+
+async function quickLogDraft() {
+  const rawTextInput = $("#captureInput").value.trim();
+  const file = state.captureAttachment;
+  if (!rawTextInput && !file) throw new Error("Describe the spend, attach a photo, or both.");
+
+  const sourceReference = file ? await uploadCaptureAttachment(file) : null;
+  const rawText = rawTextInput || `Attached ${file.name}. Needs review, no description given.`;
+
+  const data = await createDraft(file ? "screenshot" : "manual", rawText, null, sourceReference);
+  $("#captureInput").value = "";
+  $("#captureAttachment").value = "";
+  setCaptureAttachment(null);
   return data;
 }
 
@@ -732,9 +812,10 @@ function renderDrafts() {
             skipped: false,
           })}
         </div>
+        ${draft.source === "screenshot" && draft.source_reference ? `<div class="receipt-slot" data-receipt="${draft.id}"></div>` : ""}
         <div class="draft-edit">
           <input data-draft="${draft.id}" data-field="amount" value="${escapeAttr(amount)}" type="number" min="0.01" step="0.01" aria-label="Amount">
-          <input data-draft="${draft.id}" data-field="currency" value="${escapeAttr(code)}" maxlength="3" aria-label="Currency">
+          <select data-draft="${draft.id}" data-field="currency" aria-label="Currency">${currencyOptionsHtml(code)}</select>
           <input data-draft="${draft.id}" data-field="merchant" value="${escapeAttr(draft.parsed_merchant || "")}" aria-label="Merchant">
           <input data-draft="${draft.id}" data-field="category" value="${escapeAttr(draft.parsed_category || "Uncategorized")}" aria-label="Category">
           <select data-draft="${draft.id}" data-field="kind" aria-label="Kind">
@@ -760,6 +841,22 @@ function renderDrafts() {
       </article>
     `;
   }).join("");
+  attachReceiptThumbnails();
+}
+
+async function attachReceiptThumbnails() {
+  if (!state.supabase) return;
+  const candidates = state.drafts.filter((draft) => draft.source === "screenshot" && draft.source_reference);
+  await Promise.all(candidates.map(async (draft) => {
+    const slot = document.querySelector(`[data-receipt="${draft.id}"]`);
+    if (!slot) return;
+    const { data } = await state.supabase.storage
+      .from("receipt-uploads")
+      .createSignedUrl(draft.source_reference, 3600);
+    if (!data?.signedUrl) return;
+    slot.innerHTML = `<a href="${escapeAttr(data.signedUrl)}" target="_blank" rel="noopener" class="receipt-link"><i data-lucide="paperclip"></i><span>Attached photo</span></a>`;
+    if (window.lucide) window.lucide.createIcons();
+  }));
 }
 
 function updateDraftTradeoff(id) {
@@ -853,9 +950,6 @@ function renderFinanceRings() {
 
   if (els.ringCenterValue) els.ringCenterValue.textContent = money(budget, code);
   if (els.statsCenterValue) els.statsCenterValue.textContent = money(remaining, code);
-  if (els.budgetValue) els.budgetValue.textContent = money(budget, code);
-  if (els.expenseValue) els.expenseValue.textContent = money(expense, code);
-  if (els.remainingValue) els.remainingValue.textContent = money(remaining, code);
 
   renderStatsBreakdown(code);
 }
@@ -925,10 +1019,17 @@ function bindEvents() {
   $("#signUpBtn").addEventListener("click", () => guard(signUp));
   $("#signOutBtn").addEventListener("click", () => guard(signOut));
   $("#saveGoalBtn").addEventListener("click", () => guard(saveGoal));
+  $("#saveProfileBtn").addEventListener("click", () => guard(saveProfileCurrency));
   $("#saveIncomeBtn").addEventListener("click", () => guard(saveIncomeSource));
   $("#saveRecurringBtn").addEventListener("click", () => guard(saveRecurringExpense));
   $("#parseBtn").addEventListener("click", () => guard(parsePreview));
-  $("#createDraftBtn").addEventListener("click", () => guard(() => createDraft("manual", $("#captureInput").value)));
+  $("#createDraftBtn").addEventListener("click", () => guard(quickLogDraft));
+  $("#attachBtn").addEventListener("click", () => $("#captureAttachment").click());
+  $("#captureAttachment").addEventListener("change", (event) => setCaptureAttachment(event.target.files?.[0] || null));
+  $("#attachClearBtn").addEventListener("click", () => {
+    $("#captureAttachment").value = "";
+    setCaptureAttachment(null);
+  });
   $("#nightlyBtn").addEventListener("click", () => guard(() => nightlyReview(true)));
   $("#nudgeReviewBtn").addEventListener("click", () => switchView("review"));
   $("#loadReviewBtn").addEventListener("click", () => guard(() => nightlyReview(false)));
@@ -978,6 +1079,8 @@ function bindEvents() {
 
 initClient();
 state.categoryBudgets = loadCategoryBudgets();
+refreshCurrencyDefaults();
+populateCurrencySelect("goalCurrency", "NPR");
 bindEvents();
 renderAll();
 loadSession().catch((error) => showAlert(error.message || "Could not load session.", "error"));

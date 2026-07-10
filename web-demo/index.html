@@ -73,49 +73,33 @@
               </div>
             </section>
 
-            <section class="capture-summary">
-              <p class="eyebrow">Smart Capture</p>
-              <h3 id="nightlyLine">No captured transactions yet.</h3>
-              <p class="soft-line" id="rivalLine">Create a Rival goal to make flexible spending visible.</p>
-              <div class="budget-snapshot">
-                <div>
-                  <span>Budget</span>
-                  <strong id="budgetValue">NPR 0</strong>
-                </div>
-                <div>
-                  <span>Expense</span>
-                  <strong id="expenseValue">NPR 0</strong>
-                </div>
-                <div>
-                  <span>Remaining</span>
-                  <strong id="remainingValue">NPR 0</strong>
-                </div>
-              </div>
-              <button id="nightlyBtn"><i data-lucide="moon"></i><span>Nightly Review</span></button>
-            </section>
-          </div>
-
-          <div class="layout-two capture-actions">
-            <section class="panel quick-log-panel">
+            <section class="panel quick-log-panel" id="smartCapturePanel">
               <div class="section-head">
-                <h3>Quick Log</h3>
-                <span class="pill">Draft first</span>
+                <h3>Smart Capture</h3>
+                <button id="nightlyBtn" class="ghost"><i data-lucide="moon"></i><span>Nightly Review</span></button>
               </div>
+              <p class="soft-line" id="nightlyLine">No captured transactions yet.</p>
               <textarea id="captureInput" placeholder="Paid NPR 250 at Momo Ghar via wallet"></textarea>
+              <div class="attach-row">
+                <input id="captureAttachment" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" class="hidden">
+                <button id="attachBtn" type="button" class="ghost"><i data-lucide="paperclip"></i><span>Attach a photo</span></button>
+                <span id="attachName" class="attach-name hidden"></span>
+                <button id="attachClearBtn" type="button" class="ghost icon-button hidden"><i data-lucide="x"></i></button>
+              </div>
               <div class="button-row">
                 <button id="createDraftBtn"><i data-lucide="plus"></i><span>Create Draft</span></button>
                 <button id="parseBtn" class="secondary"><i data-lucide="scan-text"></i><span>Parse</span></button>
               </div>
             </section>
-
-            <section class="panel">
-              <div class="section-head">
-                <h3>Goal</h3>
-                <span id="goalStatus" class="pill">No active goal</span>
-              </div>
-              <div id="goalPreview" class="goal-preview"></div>
-            </section>
           </div>
+
+          <section class="panel goal-panel">
+            <div class="section-head">
+              <h3>Goal</h3>
+              <span id="goalStatus" class="pill">No active goal</span>
+            </div>
+            <div id="goalPreview" class="goal-preview"></div>
+          </section>
         </section>
 
         <section class="view" id="view-money">
@@ -177,6 +161,8 @@
                 <button id="signInBtn"><i data-lucide="log-in"></i><span>Sign in</span></button>
                 <button id="signUpBtn" class="secondary"><i data-lucide="user-plus"></i><span>Sign up</span></button>
               </div>
+              <label>Default currency<select id="profileCurrency"></select></label>
+              <button id="saveProfileBtn" class="secondary"><i data-lucide="coins"></i><span>Save Currency</span></button>
             </section>
 
             <section class="panel">
@@ -186,7 +172,7 @@
               </div>
               <label>Goal name<input id="goalName" placeholder="Pokhara Trip"></label>
               <label>Target amount<input id="goalAmount" type="number" min="1" placeholder="25000"></label>
-              <label>Currency<input id="goalCurrency" maxlength="3" placeholder="NPR"></label>
+              <label>Currency<select id="goalCurrency"></select></label>
               <button id="saveGoalBtn"><i data-lucide="target"></i><span>Save Goal</span></button>
             </section>
           </div>
@@ -200,7 +186,7 @@
               <div class="form-grid">
                 <label>Label<input id="incomeLabel" placeholder="Salary"></label>
                 <label>Amount<input id="incomeAmount" type="number" min="0" step="0.01" placeholder="45000"></label>
-                <label>Currency<input id="incomeCurrency" maxlength="3" placeholder="NPR"></label>
+                <label>Currency<select id="incomeCurrency"></select></label>
                 <label>Cadence<select id="incomeCadence"><option>monthly</option><option>weekly</option><option>biweekly</option><option>yearly</option></select></label>
               </div>
               <button id="saveIncomeBtn" class="secondary"><i data-lucide="wallet-cards"></i><span>Add Income</span></button>
@@ -215,7 +201,7 @@
               <div class="form-grid">
                 <label>Label<input id="recurringLabel" placeholder="Rent"></label>
                 <label>Amount<input id="recurringAmount" type="number" min="0.01" step="0.01" placeholder="18000"></label>
-                <label>Currency<input id="recurringCurrency" maxlength="3" placeholder="NPR"></label>
+                <label>Currency<select id="recurringCurrency"></select></label>
                 <label>Category<input id="recurringCategory" placeholder="Bills"></label>
                 <label>Method<select id="recurringMethod"><option>bank_transfer</option><option>wallet</option><option>card</option><option>cash</option><option>unknown</option></select></label>
                 <label>Cadence<select id="recurringCadence"><option>monthly</option><option>weekly</option><option>biweekly</option><option>yearly</option><option>daily</option></select></label>
