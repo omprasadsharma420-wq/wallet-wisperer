@@ -17,23 +17,29 @@ Do not put `OPENAI_API_KEY` or `SUPABASE_SERVICE_ROLE_KEY` in Bolt/frontend.
    - Sign up/sign in.
    - Create one active goal: name, target amount, currency, optional photo.
 
-2. Log
+2. Capture
    - One text box for manual quick capture.
-   - Paste transaction email/message.
+   - Paste bank, wallet, receipt, or transaction text.
    - Calls `create-draft`.
    - Shows draft card immediately.
 
-3. Smart Capture Inbox
+3. Expense and Income
+   - Shows Bills, Needs, and Wants category groups.
+   - Uses sliders for category target amounts.
+   - Contains income sources, recurring expenses, and the active Rival goal.
+
+4. Smart Capture Inbox
    - Call `nightly-review`.
    - Cards show amount, merchant, category, confidence, source.
    - User can edit amount/category/necessity/payment method.
    - Confirm calls `confirm-drafts`.
 
-4. Report
+5. Stats
    - Calls `close-day`.
    - Shows total spend, protected amount, streak, Rival insight.
+   - Shows budget, expense, and remaining rings.
 
-5. Dashboard
+6. Dashboard
    - Use `dashboard_summary`.
    - Keep it minimal; do not make a budget-remaining permission-to-spend bar.
 

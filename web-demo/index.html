@@ -21,9 +21,9 @@
 
         <nav class="nav" aria-label="Primary">
           <button class="nav-item active" data-view="capture"><i data-lucide="sparkles"></i><span>Capture</span></button>
+          <button class="nav-item" data-view="money"><i data-lucide="sliders-horizontal"></i><span>Expense and Income</span></button>
           <button class="nav-item" data-view="review"><i data-lucide="inbox"></i><span>Review</span></button>
-          <button class="nav-item" data-view="report"><i data-lucide="line-chart"></i><span>Report</span></button>
-          <button class="nav-item" data-view="settings"><i data-lucide="settings"></i><span>Setup</span></button>
+          <button class="nav-item" data-view="stats"><i data-lucide="line-chart"></i><span>Stats</span></button>
         </nav>
 
         <div class="side-stat">
@@ -54,22 +54,49 @@
         </section>
 
         <section class="view active" id="view-capture">
-          <div class="hero-band hero-dashboard">
-            <div class="hero-copy">
-              <p class="eyebrow">Today</p>
+          <div class="finance-hero">
+            <section class="apple-ring-panel">
+              <div class="location-chip"><i data-lucide="map-pin"></i><span id="locationLine">Local day</span></div>
+              <div id="captureRings" class="apple-rings" aria-label="Budget, expense, and remaining rings">
+                <div class="apple-ring apple-ring-budget"></div>
+                <div class="apple-ring apple-ring-expense"></div>
+                <div class="apple-ring apple-ring-remaining"></div>
+                <div class="apple-ring-core">
+                  <span>Budget</span>
+                  <strong id="ringCenterValue">NPR 0</strong>
+                </div>
+              </div>
+              <div class="ring-legend">
+                <span><i class="legend-dot budget"></i>Budget</span>
+                <span><i class="legend-dot expense"></i>Expense</span>
+                <span><i class="legend-dot remaining"></i>Remaining</span>
+              </div>
+            </section>
+
+            <section class="capture-summary">
+              <p class="eyebrow">Smart Capture</p>
               <h3 id="nightlyLine">No captured transactions yet.</h3>
               <p class="soft-line" id="rivalLine">Create a Rival goal to make flexible spending visible.</p>
-            </div>
-            <button id="nightlyBtn"><i data-lucide="moon"></i><span>Nightly Review</span></button>
-            <div class="rings-board" aria-label="Daily rings">
-              <div id="goalRing" class="ring-card"></div>
-              <div id="reviewRing" class="ring-card"></div>
-              <div id="protectedRing" class="ring-card"></div>
-            </div>
+              <div class="budget-snapshot">
+                <div>
+                  <span>Budget</span>
+                  <strong id="budgetValue">NPR 0</strong>
+                </div>
+                <div>
+                  <span>Expense</span>
+                  <strong id="expenseValue">NPR 0</strong>
+                </div>
+                <div>
+                  <span>Remaining</span>
+                  <strong id="remainingValue">NPR 0</strong>
+                </div>
+              </div>
+              <button id="nightlyBtn"><i data-lucide="moon"></i><span>Nightly Review</span></button>
+            </section>
           </div>
 
-          <div class="layout-two">
-            <section class="panel">
+          <div class="layout-two capture-actions">
+            <section class="panel quick-log-panel">
               <div class="section-head">
                 <h3>Quick Log</h3>
                 <span class="pill">Draft first</span>
@@ -83,89 +110,58 @@
 
             <section class="panel">
               <div class="section-head">
-                <h3>Forwarded Email</h3>
-                <span class="pill">Smart Capture</span>
+                <h3>Goal</h3>
+                <span id="goalStatus" class="pill">No active goal</span>
               </div>
-              <input id="emailSubject" placeholder="Payment alert">
-              <textarea id="emailInput" placeholder="Paste bank, wallet, receipt, or transaction email text"></textarea>
-              <button id="emailDraftBtn"><i data-lucide="mail-plus"></i><span>Create Email Draft</span></button>
+              <div id="goalPreview" class="goal-preview"></div>
             </section>
           </div>
-
-          <section class="panel">
-            <div class="section-head">
-              <h3>Goal</h3>
-              <span id="goalStatus" class="pill">No active goal</span>
-            </div>
-            <div id="goalPreview" class="goal-preview"></div>
-          </section>
         </section>
 
-        <section class="view" id="view-review">
-          <div class="hero-band">
+        <section class="view" id="view-money">
+          <div class="money-hero">
             <div>
-              <p class="eyebrow">Smart Capture Inbox</p>
-              <h3 id="reviewLine">Load tonight's drafts.</h3>
+              <p class="eyebrow" id="budgetMonth">Jul 2026</p>
+              <h3>Expense and Income</h3>
             </div>
-            <div class="button-row compact">
-              <button id="recurringBtn" class="secondary"><i data-lucide="calendar-clock"></i><span>Fixed Cards</span></button>
-              <button id="loadReviewBtn"><i data-lucide="inbox"></i><span>Load Review</span></button>
+            <div class="assignment-card">
+              <span>Monthly income</span>
+              <strong id="incomeTotalValue">NPR 0</strong>
+              <small id="assignedLine">NPR 0 assigned</small>
             </div>
           </div>
 
-          <section class="draft-list" id="draftList"></section>
-          <section id="confirmationPanel" class="confirmation-panel hidden"></section>
-          <div class="button-row sticky-actions">
-            <button id="confirmSelectedBtn"><i data-lucide="check"></i><span>Confirm Selected</span></button>
-            <button id="ignoreSelectedBtn" class="secondary"><i data-lucide="x"></i><span>Ignore Selected</span></button>
-          </div>
-        </section>
+          <div class="budget-builder">
+            <section class="panel category-panel">
+              <div class="section-head">
+                <h3>Categories</h3>
+                <span class="pill">Targets</span>
+              </div>
+              <div id="categoryGroups" class="category-groups"></div>
+            </section>
 
-        <section class="view" id="view-report">
-          <section class="panel ring-summary">
-            <div class="section-head">
-              <h3>Daily Rings</h3>
-              <span class="pill">Close-day</span>
-            </div>
-            <div class="rings-board report-rings">
-              <div id="spentRing" class="ring-card"></div>
-              <div id="reportProtectedRing" class="ring-card"></div>
-              <div id="streakRing" class="ring-card"></div>
-            </div>
-          </section>
-
-          <div class="report-grid">
-            <section class="metric">
-              <span>Total spent</span>
-              <strong id="metricSpent">-</strong>
-            </section>
-            <section class="metric">
-              <span>Flexible</span>
-              <strong id="metricFlexible">-</strong>
-            </section>
-            <section class="metric">
-              <span>Protected</span>
-              <strong id="metricProtected">-</strong>
-            </section>
-            <section class="metric">
-              <span>Streak</span>
-              <strong id="metricStreak">-</strong>
-            </section>
+            <aside class="panel target-panel">
+              <div class="section-head">
+                <h3 id="targetTitle">Phone & Internet</h3>
+                <span id="targetGroup" class="pill">Bills</span>
+              </div>
+              <div class="target-focus">
+                <span id="targetIcon" class="target-icon">P</span>
+                <strong id="targetAmountValue">NPR 0</strong>
+                <small id="targetHint">Monthly target</small>
+              </div>
+              <label class="slider-label">
+                Amount
+                <input id="targetSlider" type="range" min="0" max="50000" step="500">
+              </label>
+              <div class="target-stats">
+                <div><span>Spent</span><strong id="targetSpentValue">NPR 0</strong></div>
+                <div><span>Left</span><strong id="targetRemainingValue">NPR 0</strong></div>
+              </div>
+              <div class="progress target-progress"><span id="targetProgressBar"></span></div>
+            </aside>
           </div>
 
-          <section class="panel report-panel">
-            <div class="section-head">
-              <h3>Close Day</h3>
-              <button id="closeDayBtn"><i data-lucide="sunset"></i><span>Generate Report</span></button>
-            </div>
-            <div class="report-copy">
-              <p id="reportInsight">Your report will appear after you close the day.</p>
-              <strong id="reportAchievement"></strong>
-            </div>
-          </section>
-        </section>
-
-        <section class="view" id="view-settings">
           <div class="layout-two">
             <section class="panel">
               <div class="section-head">
@@ -230,6 +226,80 @@
               <div id="recurringList" class="mini-list"></div>
             </section>
           </div>
+        </section>
+
+        <section class="view" id="view-review">
+          <div class="hero-band">
+            <div>
+              <p class="eyebrow">Smart Capture Inbox</p>
+              <h3 id="reviewLine">Load tonight's drafts.</h3>
+            </div>
+            <div class="button-row compact">
+              <button id="recurringBtn" class="secondary"><i data-lucide="calendar-clock"></i><span>Fixed Cards</span></button>
+              <button id="loadReviewBtn"><i data-lucide="inbox"></i><span>Load Review</span></button>
+            </div>
+          </div>
+
+          <section class="draft-list" id="draftList"></section>
+          <section id="confirmationPanel" class="confirmation-panel hidden"></section>
+          <div class="button-row sticky-actions">
+            <button id="confirmSelectedBtn"><i data-lucide="check"></i><span>Confirm Selected</span></button>
+            <button id="ignoreSelectedBtn" class="secondary"><i data-lucide="x"></i><span>Ignore Selected</span></button>
+          </div>
+        </section>
+
+        <section class="view" id="view-stats">
+          <div class="stats-hero">
+            <section class="apple-ring-panel compact-ring-panel">
+              <div id="statsRings" class="apple-rings small" aria-label="Stats rings">
+                <div class="apple-ring apple-ring-budget"></div>
+                <div class="apple-ring apple-ring-expense"></div>
+                <div class="apple-ring apple-ring-remaining"></div>
+                <div class="apple-ring-core">
+                  <span>Left</span>
+                  <strong id="statsCenterValue">NPR 0</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel report-panel">
+              <div class="section-head">
+                <h3>Close Day</h3>
+                <button id="closeDayBtn"><i data-lucide="sunset"></i><span>Generate Report</span></button>
+              </div>
+              <div class="report-copy">
+                <p id="reportInsight">Your report will appear after you close the day.</p>
+                <strong id="reportAchievement"></strong>
+              </div>
+            </section>
+          </div>
+
+          <div class="report-grid">
+            <section class="metric">
+              <span>Total spent</span>
+              <strong id="metricSpent">-</strong>
+            </section>
+            <section class="metric">
+              <span>Flexible</span>
+              <strong id="metricFlexible">-</strong>
+            </section>
+            <section class="metric">
+              <span>Protected</span>
+              <strong id="metricProtected">-</strong>
+            </section>
+            <section class="metric">
+              <span>Streak</span>
+              <strong id="metricStreak">-</strong>
+            </section>
+          </div>
+
+          <section class="panel stats-breakdown">
+            <div class="section-head">
+              <h3>Budget Targets</h3>
+              <span class="pill" id="statsBudgetStatus">NPR 0 left</span>
+            </div>
+            <div id="statsCategoryList" class="stats-category-list"></div>
+          </section>
         </section>
       </section>
     </main>

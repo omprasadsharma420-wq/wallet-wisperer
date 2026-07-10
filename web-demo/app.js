@@ -2,6 +2,35 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const DEFAULT_URL = "https://lzbtttgggoxumbcjqqsu.supabase.co";
 const DEFAULT_PUBLIC_KEY = "sb_publishable_v5pAWpqrnyLyEMlNeaZPAg_4xah6LqS";
+const CATEGORY_STORAGE_KEY = "ww_category_targets";
+
+const CATEGORY_GROUPS = [
+  {
+    name: "Bills",
+    categories: [
+      { id: "rent-mortgage", label: "Rent/Mortgage", icon: "RM", amount: 18000 },
+      { id: "phone-internet", label: "Phone & Internet", icon: "PI", amount: 2500 },
+      { id: "utilities", label: "Utilities", icon: "UT", amount: 3500 },
+    ],
+  },
+  {
+    name: "Needs",
+    categories: [
+      { id: "groceries", label: "Groceries", icon: "GR", amount: 12000 },
+      { id: "transportation", label: "Transportation", icon: "TR", amount: 4500 },
+      { id: "medical-expenses", label: "Medical expenses", icon: "ME", amount: 2500 },
+      { id: "emergency-fund", label: "Emergency fund", icon: "EF", amount: 5000 },
+    ],
+  },
+  {
+    name: "Wants",
+    categories: [
+      { id: "dining-out", label: "Dining out", icon: "DO", amount: 3500 },
+      { id: "entertainment", label: "Entertainment", icon: "EN", amount: 2500 },
+      { id: "vacation", label: "Vacation", icon: "VA", amount: 7000 },
+    ],
+  },
+];
 
 const state = {
   supabase: null,
@@ -15,6 +44,8 @@ const state = {
   recurringExpenses: [],
   lastConfirmations: [],
   pendingCount: 0,
+  categoryBudgets: [],
+  selectedCategoryId: "phone-internet",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -28,6 +59,7 @@ const els = {
   nightlyLine: $("#nightlyLine"),
   rivalLine: $("#rivalLine"),
   reviewLine: $("#reviewLine"),
+  locationLine: $("#locationLine"),
   nudgeBar: $("#nudgeBar"),
   nudgeCopy: $("#nudgeCopy"),
   draftList: $("#draftList"),
@@ -42,12 +74,28 @@ const els = {
   metricStreak: $("#metricStreak"),
   reportInsight: $("#reportInsight"),
   reportAchievement: $("#reportAchievement"),
-  goalRing: $("#goalRing"),
-  reviewRing: $("#reviewRing"),
-  protectedRing: $("#protectedRing"),
-  spentRing: $("#spentRing"),
-  reportProtectedRing: $("#reportProtectedRing"),
-  streakRing: $("#streakRing"),
+  captureRings: $("#captureRings"),
+  statsRings: $("#statsRings"),
+  ringCenterValue: $("#ringCenterValue"),
+  statsCenterValue: $("#statsCenterValue"),
+  budgetValue: $("#budgetValue"),
+  expenseValue: $("#expenseValue"),
+  remainingValue: $("#remainingValue"),
+  budgetMonth: $("#budgetMonth"),
+  incomeTotalValue: $("#incomeTotalValue"),
+  assignedLine: $("#assignedLine"),
+  categoryGroups: $("#categoryGroups"),
+  targetTitle: $("#targetTitle"),
+  targetGroup: $("#targetGroup"),
+  targetIcon: $("#targetIcon"),
+  targetAmountValue: $("#targetAmountValue"),
+  targetHint: $("#targetHint"),
+  targetSlider: $("#targetSlider"),
+  targetSpentValue: $("#targetSpentValue"),
+  targetRemainingValue: $("#targetRemainingValue"),
+  targetProgressBar: $("#targetProgressBar"),
+  statsCategoryList: $("#statsCategoryList"),
+  statsBudgetStatus: $("#statsBudgetStatus"),
 };
 
 function showAlert(message, tone = "info") {
@@ -102,6 +150,120 @@ function pct(value) {
   return Math.max(0, Math.min(100, value));
 }
 
+function defaultCategoryBudgets() {
+  return CATEGORY_GROUPS.map((group) => ({
+    name: group.name,
+    categories: group.categories.map((category) => ({ ...category })),
+  }));
+}
+
+function loadCategoryBudgets() {
+  const defaults = defaultCategoryBudgets();
+  let saved = [];
+  try {
+    saved = JSON.parse(localStorage.getItem(CATEGORY_STORAGE_KEY) || "[]");
+  } catch (_error) {
+    saved = [];
+  }
+
+  const savedById = new Map(
+    saved
+      .flatMap((group) => group.categories || [])
+      .map((category) => [category.id, Number(category.amount)]),
+  );
+
+  return defaults.map((group) => ({
+    ...group,
+    categories: group.categories.map((category) => ({
+      ...category,
+      amount: savedById.has(category.id) ? Number(savedById.get(category.id)) : category.amount,
+    })),
+  }));
+}
+
+function saveCategoryBudgets() {
+  localStorage.setItem(CATEGORY_STORAGE_KEY, JSON.stringify(state.categoryBudgets));
+}
+
+function allCategories() {
+  return state.categoryBudgets.flatMap((group) => group.categories.map((category) => ({ ...category, group: group.name })));
+}
+
+function findCategory(id = state.selectedCategoryId) {
+  return allCategories().find((category) => category.id === id) || allCategories()[0];
+}
+
+function updateCategoryAmount(id, amount) {
+  for (const group of state.categoryBudgets) {
+    const category = group.categories.find((item) => item.id === id);
+    if (category) {
+      category.amount = Math.max(0, Number(amount) || 0);
+      state.selectedCategoryId = id;
+      saveCategoryBudgets();
+      renderBudgetPlan();
+      renderFinanceRings();
+      return;
+    }
+  }
+}
+
+function categoryBudgetTotal() {
+  return allCategories().reduce((total, category) => total + Number(category.amount || 0), 0);
+}
+
+function monthlyIncomeTotal() {
+  const multipliers = {
+    weekly: 4,
+    biweekly: 2,
+    monthly: 1,
+    yearly: 1 / 12,
+  };
+
+  return state.incomeSources.reduce((total, item) => {
+    const multiplier = multipliers[item.cadence] || 1;
+    return total + Number(item.amount || 0) * multiplier;
+  }, 0);
+}
+
+function currentExpenseTotal() {
+  const reportSpent = Number(state.report?.total_spent || 0);
+  if (reportSpent > 0) return reportSpent;
+
+  return state.lastConfirmations
+    .filter((transaction) => transaction.kind !== "income" && !transaction.is_skipped_opportunity)
+    .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
+}
+
+function categorySpent(category) {
+  const key = normalizeText(category?.label || "");
+  if (!key) return 0;
+
+  return state.lastConfirmations
+    .filter((transaction) => transaction.kind !== "income" && !transaction.is_skipped_opportunity)
+    .filter((transaction) => {
+      const categoryText = normalizeText(transaction.category || "");
+      const merchantText = normalizeText(transaction.merchant || "");
+      return (categoryText && (categoryText.includes(key) || key.includes(categoryText))) || (merchantText && merchantText.includes(key));
+    })
+    .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
+}
+
+function normalizeText(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function categorySliderMax(category) {
+  const base = Number(category?.amount || 0);
+  return Math.max(10000, Math.ceil(Math.max(base * 2, 50000) / 500) * 500);
+}
+
+function displayLocation() {
+  const timezone = state.profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Katmandu";
+  const place = timezone.split("/").pop().replaceAll("_", " ").replace("Katmandu", "Kathmandu");
+  const localDate = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: timezone }).format(new Date());
+  return `${place} local day, ${localDate}`;
+}
+
 async function invoke(name, body = {}) {
   const { data, error } = await requireClient().functions.invoke(name, { body });
   if (error) throw error;
@@ -111,7 +273,7 @@ async function invoke(name, body = {}) {
 async function loadSession() {
   if (!state.supabase) {
     renderSession();
-    renderRings();
+    renderFinanceRings();
     return;
   }
 
@@ -120,7 +282,7 @@ async function loadSession() {
   renderSession();
 
   if (state.session) await runStartupSync({ silent: true });
-  else renderRings();
+  else renderFinanceRings();
 }
 
 function renderSession() {
@@ -300,9 +462,9 @@ function renderGoal() {
   const goal = state.goal;
   if (!goal) {
     els.goalStatus.textContent = "No active goal";
-    els.goalPreview.innerHTML = "<p class=\"draft-meta\">Create one goal in Setup.</p>";
+    els.goalPreview.innerHTML = "<p class=\"draft-meta\">Create one goal in Expense and Income.</p>";
     els.rivalLine.textContent = "Create a Rival goal to make flexible spending visible.";
-    renderRings();
+    renderFinanceRings();
     return;
   }
 
@@ -318,7 +480,7 @@ function renderGoal() {
     <div class="progress"><span style="width:${percent}%"></span></div>
     <div class="draft-meta">${money(goal.current_saved_amount || 0, goal.currency)} already set aside</div>
   `;
-  renderRings();
+  renderFinanceRings();
 }
 
 function renderIncomeSources() {
@@ -331,6 +493,7 @@ function renderIncomeSources() {
       </div>
     `).join("")
     : "<p class=\"draft-meta\">No income sources yet.</p>";
+  renderBudgetPlan();
 }
 
 function renderRecurringExpenses() {
@@ -343,6 +506,80 @@ function renderRecurringExpenses() {
       </div>
     `).join("")
     : "<p class=\"draft-meta\">No fixed expenses yet.</p>";
+}
+
+function renderBudgetPlan() {
+  if (!els.categoryGroups) return;
+  const code = currency(state.profile?.default_currency || state.goal?.currency || "NPR");
+  const monthLabel = new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" }).format(new Date());
+  const incomeTotal = monthlyIncomeTotal();
+  const assignedTotal = categoryBudgetTotal();
+  const selected = findCategory();
+
+  els.budgetMonth.textContent = monthLabel;
+  els.incomeTotalValue.textContent = money(incomeTotal, code);
+  els.assignedLine.textContent = `${money(assignedTotal, code)} assigned`;
+
+  els.categoryGroups.innerHTML = state.categoryBudgets.map((group) => `
+    <section class="category-group">
+      <div class="category-group-title">${escapeHtml(group.name)}</div>
+      ${group.categories.map((category) => `
+        <article class="category-row ${category.id === state.selectedCategoryId ? "active" : ""}" data-category-row="${escapeAttr(category.id)}" tabindex="0">
+          <div class="category-name">
+            <span class="category-icon">${escapeHtml(category.icon)}</span>
+            <div>
+              <strong>${escapeHtml(category.label)}</strong>
+              <small>${escapeHtml(group.name)}</small>
+            </div>
+          </div>
+          <span class="category-amount">${money(category.amount, code)}</span>
+          <input data-category-slider="${escapeAttr(category.id)}" type="range" min="0" max="${categorySliderMax(category)}" step="500" value="${Number(category.amount || 0)}" aria-label="${escapeAttr(category.label)} target">
+        </article>
+      `).join("")}
+    </section>
+  `).join("");
+
+  renderTargetPanel(selected, code);
+  renderStatsBreakdown(code);
+}
+
+function renderTargetPanel(category, code) {
+  if (!category || !els.targetSlider) return;
+  const spent = categorySpent(category);
+  const amount = Number(category.amount || 0);
+  const remaining = Math.max(amount - spent, 0);
+  const progress = amount ? pct((spent / amount) * 100) : 0;
+
+  els.targetTitle.textContent = category.label;
+  els.targetGroup.textContent = category.group;
+  els.targetIcon.textContent = category.icon;
+  els.targetAmountValue.textContent = money(amount, code);
+  els.targetHint.textContent = `${category.group} target`;
+  els.targetSlider.max = String(categorySliderMax(category));
+  els.targetSlider.value = String(amount);
+  els.targetSpentValue.textContent = money(spent, code);
+  els.targetRemainingValue.textContent = money(remaining, code);
+  els.targetProgressBar.style.width = `${progress}%`;
+}
+
+function renderStatsBreakdown(code = currency(state.profile?.default_currency || state.goal?.currency || "NPR")) {
+  if (!els.statsCategoryList) return;
+  const budget = categoryBudgetTotal();
+  const expense = currentExpenseTotal();
+  const remaining = Math.max(budget - expense, 0);
+
+  els.statsBudgetStatus.textContent = `${money(remaining, code)} left`;
+  els.statsCategoryList.innerHTML = allCategories().map((category) => {
+    const spent = categorySpent(category);
+    const progress = category.amount ? pct((spent / Number(category.amount)) * 100) : 0;
+    return `
+      <div class="stats-category-row">
+        <strong>${escapeHtml(category.label)}</strong>
+        <span>${money(spent, code)} / ${money(category.amount, code)}</span>
+        <div class="progress"><span style="width:${progress}%"></span></div>
+      </div>
+    `;
+  }).join("");
 }
 
 async function createDraft(source, rawText, subject = null) {
@@ -452,7 +689,7 @@ async function closeDay() {
   state.report = data.report;
   state.streak = data.streak;
   renderReport();
-  switchView("report");
+  switchView("stats");
   showAlert("Day closed.");
 }
 
@@ -586,50 +823,53 @@ function renderConfirmations() {
 
 function renderReport() {
   const report = state.report;
-  if (!report) return;
-  els.metricSpent.textContent = money(report.total_spent, report.currency);
-  els.metricFlexible.textContent = money(report.flexible_spent, report.currency);
-  els.metricProtected.textContent = money(report.protected_amount, report.currency);
+  const code = currency(report?.currency || state.profile?.default_currency || state.goal?.currency || "NPR");
+  els.metricSpent.textContent = report ? money(report.total_spent, code) : "-";
+  els.metricFlexible.textContent = report ? money(report.flexible_spent, code) : "-";
+  els.metricProtected.textContent = report ? money(report.protected_amount, code) : "-";
   els.metricStreak.textContent = state.streak ? `${state.streak.current_count} ${state.streak.current_count === 1 ? "day" : "days"}` : "-";
-  els.reportInsight.textContent = report.insight;
-  els.reportAchievement.textContent = report.achievement;
-  renderRings();
+  if (report) {
+    els.reportInsight.textContent = report.insight;
+    els.reportAchievement.textContent = report.achievement;
+  } else {
+    els.reportInsight.textContent = "Your report will appear after you close the day.";
+    els.reportAchievement.textContent = "";
+  }
+  renderFinanceRings();
 }
 
-function renderRings() {
-  const goalPercent = state.goal?.target_amount ? pct((Number(state.goal.current_saved_amount || 0) / Number(state.goal.target_amount)) * 100) : 0;
-  const reviewPercent = state.pendingCount === 0 ? 100 : pct(Math.max(0, 100 - state.pendingCount * 20));
-  const protectedAmount = Number(state.report?.protected_amount || 0);
-  const flexibleAmount = Number(state.report?.flexible_spent || 0);
-  const protectedPercent = protectedAmount + flexibleAmount > 0 ? pct((protectedAmount / (protectedAmount + flexibleAmount)) * 100) : 0;
-  const spentAmount = Number(state.report?.total_spent || 0);
-  const neededAmount = Number(state.report?.needed_spent || 0) + Number(state.report?.fixed_spent || 0);
-  const spendPercent = spentAmount > 0 ? pct((neededAmount / spentAmount) * 100) : 0;
-  const streakPercent = pct(((state.streak?.current_count || 0) / 7) * 100);
+function renderFinanceRings() {
+  const code = currency(state.report?.currency || state.profile?.default_currency || state.goal?.currency || "NPR");
+  const budget = categoryBudgetTotal();
+  const expense = currentExpenseTotal();
+  const remaining = Math.max(budget - expense, 0);
+  const expensePercent = budget ? pct((expense / budget) * 100) : 0;
+  const remainingPercent = budget ? pct((remaining / budget) * 100) : 0;
+  const budgetPercent = budget ? 100 : 0;
 
-  renderRing(els.goalRing, { label: "Rival", value: `${goalPercent.toFixed(0)}%`, sub: state.goal?.name || "No goal", percent: goalPercent, tone: "teal" });
-  renderRing(els.reviewRing, { label: "Review", value: String(state.pendingCount), sub: "pending", percent: reviewPercent, tone: "indigo" });
-  renderRing(els.protectedRing, { label: "Protected", value: money(protectedAmount, state.report?.currency || state.goal?.currency || "NPR"), sub: "today", percent: protectedPercent, tone: "amber" });
-  renderRing(els.spentRing, { label: "Needed", value: `${spendPercent.toFixed(0)}%`, sub: "of spending", percent: spendPercent, tone: "teal" });
-  renderRing(els.reportProtectedRing, { label: "Protected", value: money(protectedAmount, state.report?.currency || "NPR"), sub: "toward Rival", percent: protectedPercent, tone: "amber" });
-  renderRing(els.streakRing, { label: "Streak", value: `${state.streak?.current_count || 0}`, sub: "days", percent: streakPercent, tone: "indigo" });
+  if (els.locationLine) els.locationLine.textContent = displayLocation();
+  setAppleRing(els.captureRings, { budget: budgetPercent, expense: expensePercent, remaining: remainingPercent });
+  setAppleRing(els.statsRings, { budget: budgetPercent, expense: expensePercent, remaining: remainingPercent });
+
+  if (els.ringCenterValue) els.ringCenterValue.textContent = money(budget, code);
+  if (els.statsCenterValue) els.statsCenterValue.textContent = money(remaining, code);
+  if (els.budgetValue) els.budgetValue.textContent = money(budget, code);
+  if (els.expenseValue) els.expenseValue.textContent = money(expense, code);
+  if (els.remainingValue) els.remainingValue.textContent = money(remaining, code);
+
+  renderStatsBreakdown(code);
 }
 
-function renderRing(element, { label, value, sub, percent, tone }) {
+function setAppleRing(element, values) {
   if (!element) return;
-  element.style.setProperty("--ring-value", `${pct(percent)}%`);
-  element.dataset.tone = tone;
-  element.innerHTML = `
-    <div class="ring-visual"><span>${escapeHtml(value)}</span></div>
-    <div class="ring-copy">
-      <strong>${escapeHtml(label)}</strong>
-      <span>${escapeHtml(sub)}</span>
-    </div>
-  `;
+  element.style.setProperty("--budget-ring-value", `${pct(values.budget)}%`);
+  element.style.setProperty("--expense-ring-value", `${pct(values.expense)}%`);
+  element.style.setProperty("--remaining-ring-value", `${pct(values.remaining)}%`);
 }
 
 function renderAll() {
   renderSession();
+  renderBudgetPlan();
   renderGoal();
   renderIncomeSources();
   renderRecurringExpenses();
@@ -637,7 +877,7 @@ function renderAll() {
   renderConfirmations();
   renderReport();
   renderNudge();
-  renderRings();
+  renderFinanceRings();
 }
 
 function switchView(view) {
@@ -645,9 +885,9 @@ function switchView(view) {
   $$(".view").forEach((item) => item.classList.toggle("active", item.id === `view-${view}`));
   const titles = {
     capture: "Smart Capture",
+    money: "Expense and Income",
     review: "Nightly Review",
-    report: "Daily Report",
-    settings: "Setup",
+    stats: "Stats",
   };
   els.viewTitle.textContent = titles[view] || "Wallet Whisperer";
 }
@@ -689,7 +929,6 @@ function bindEvents() {
   $("#saveRecurringBtn").addEventListener("click", () => guard(saveRecurringExpense));
   $("#parseBtn").addEventListener("click", () => guard(parsePreview));
   $("#createDraftBtn").addEventListener("click", () => guard(() => createDraft("manual", $("#captureInput").value)));
-  $("#emailDraftBtn").addEventListener("click", () => guard(() => createDraft("forwarded_email", $("#emailInput").value, $("#emailSubject").value)));
   $("#nightlyBtn").addEventListener("click", () => guard(() => nightlyReview(true)));
   $("#nudgeReviewBtn").addEventListener("click", () => switchView("review"));
   $("#loadReviewBtn").addEventListener("click", () => guard(() => nightlyReview(false)));
@@ -703,6 +942,27 @@ function bindEvents() {
       showAlert("Refreshed.");
     }
   }));
+  els.categoryGroups.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-category-row]");
+    if (!row) return;
+    state.selectedCategoryId = row.dataset.categoryRow;
+    renderBudgetPlan();
+  });
+  els.categoryGroups.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target.closest("[data-category-row]");
+    if (!row) return;
+    event.preventDefault();
+    state.selectedCategoryId = row.dataset.categoryRow;
+    renderBudgetPlan();
+  });
+  els.categoryGroups.addEventListener("input", (event) => {
+    const id = event.target?.dataset?.categorySlider;
+    if (id) updateCategoryAmount(id, event.target.value);
+  });
+  els.targetSlider.addEventListener("input", (event) => {
+    updateCategoryAmount(state.selectedCategoryId, event.target.value);
+  });
   els.draftList.addEventListener("input", (event) => {
     const id = event.target?.dataset?.draft;
     if (id) updateDraftTradeoff(id);
@@ -717,8 +977,9 @@ function bindEvents() {
 }
 
 initClient();
+state.categoryBudgets = loadCategoryBudgets();
 bindEvents();
-renderRings();
+renderAll();
 loadSession().catch((error) => showAlert(error.message || "Could not load session.", "error"));
 window.addEventListener("load", () => {
   if (window.lucide) window.lucide.createIcons();

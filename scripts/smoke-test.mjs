@@ -73,12 +73,15 @@ assert(/\[functions\.inbound-email\]\s+verify_jwt = true/.test(read("supabase/co
 assert(read("supabase/functions/inbound-email/index.ts").includes("requireAuth(req)"), "inbound email uses authenticated user context");
 assert(!read("supabase/functions/inbound-email/index.ts").includes("createServiceClient"), "inbound email does not use service role");
 assert(read("web-demo/index.html").includes("<script type=\"module\" src=\"./app.js\"></script>"), "web demo loads app module");
-assert(read("web-demo/app.js").includes("forwarded_email"), "web demo uses forwarded email source");
+assert(!read("web-demo/index.html").includes("Forwarded Email"), "web demo removes forwarded email panel");
+assert(read("web-demo/index.html").includes("view-money"), "web demo includes Expense and Income tab");
+assert(read("web-demo/index.html").includes("view-stats"), "web demo includes Stats tab");
 assert(read("web-demo/app.js").includes("data-field=\"payment_method\""), "web demo exposes payment method review");
 assert(read("web-demo/app.js").includes("rivalTradeoffHtml"), "web demo shows Rival tradeoff before confirmation");
 assert(read("web-demo/app.js").includes("generate-recurring-drafts"), "web demo calls recurring draft generation");
 assert(read("web-demo/app.js").includes("visibilitychange"), "web demo refreshes in-app nudge on foreground");
-assert(read("web-demo/index.html").includes("goalRing"), "web demo includes rings UI");
+assert(read("web-demo/index.html").includes("captureRings"), "web demo includes Apple-style rings UI");
+assert(read("web-demo/app.js").includes("CATEGORY_GROUPS"), "web demo includes category budget groups");
 assert(read("web-demo/styles.css").includes("conic-gradient"), "web demo renders ring visuals");
 assert(read("scripts/deployed-smoke-test.mjs").includes("Hosted smoke test passed"), "hosted smoke test script exists");
 assert(read("scripts/deploy-all.cmd").includes("db push"), "deploy-all pushes migrations");

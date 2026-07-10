@@ -12,7 +12,7 @@ Five possible transactions found today. Review tonight?
 
 ## 90 Second Flow
 
-1. Open the app and show the Rival goal with its photo.
+1. Open the app and show the Apple-style budget rings.
 2. Paste a bank or wallet message into Smart Capture.
 3. Create a draft and point out that AI did not finalize anything.
 4. Open Nightly Review. The draft card shows the trade-off live: "NPR 250 = 1.0% of Pokhara Trip". Change necessity to fixed and show the trade-off disappear, because fixed costs never count against the Rival.
@@ -62,4 +62,4 @@ http://localhost:4173
 
 If OpenAI is unavailable, call `create-draft` with `force_heuristic: true`. The demo still proves the Smart Capture loop.
 
-If email capture is not wired to a real provider, paste transaction email text into the Forwarded Email panel. This is honest V1 behavior and matches the product boundary.
+If email capture is not wired to a real provider, paste the transaction text into Quick Log. This keeps the demo honest without making the app look like an inbox.
