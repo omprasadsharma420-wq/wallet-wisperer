@@ -18,6 +18,65 @@ const CURRENCIES = [
   { code: "CNY", name: "Chinese Yuan" },
 ];
 
+const FALLBACK_TIMEZONES = [
+  "Asia/Kathmandu", "Asia/Kolkata", "Asia/Dhaka", "Asia/Dubai", "Asia/Singapore",
+  "Asia/Tokyo", "Asia/Shanghai", "Asia/Hong_Kong", "Australia/Sydney",
+  "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Moscow",
+  "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+  "America/Sao_Paulo", "Africa/Cairo", "Africa/Johannesburg", "Pacific/Auckland",
+  "UTC",
+];
+
+function timezoneList() {
+  try {
+    if (typeof Intl.supportedValuesOf === "function") return Intl.supportedValuesOf("timeZone");
+  } catch (_error) {
+    // fall through to the curated list
+  }
+  return FALLBACK_TIMEZONES;
+}
+
+const SLIDER_RAW_MAX = 1000;
+const SLIDER_AMOUNT_MAX = 1_000_000_000;
+
+function amountToRaw(amount) {
+  const value = Math.max(0, Number(amount) || 0);
+  if (value <= 0) return 0;
+  const raw = (Math.log10(Math.min(value, SLIDER_AMOUNT_MAX)) / Math.log10(SLIDER_AMOUNT_MAX)) * SLIDER_RAW_MAX;
+  return Math.max(0, Math.min(SLIDER_RAW_MAX, Math.round(raw)));
+}
+
+function rawToAmount(raw) {
+  const value = Math.max(0, Math.min(SLIDER_RAW_MAX, Number(raw) || 0));
+  if (value <= 0) return 0;
+  const amount = Math.pow(10, (value / SLIDER_RAW_MAX) * Math.log10(SLIDER_AMOUNT_MAX));
+  const step = amount < 1000 ? 10 : amount < 100_000 ? 100 : 1000;
+  return Math.round(amount / step) * step;
+}
+
+function sliderFillPercent(amount) {
+  return `${((amountToRaw(amount) / SLIDER_RAW_MAX) * 100).toFixed(1)}%`;
+}
+
+function trimDecimal(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function compactAmount(value) {
+  const n = Number(value) || 0;
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000_000) return `${trimDecimal(n / 1_000_000_000)}B`;
+  if (abs >= 1_000_000) return `${trimDecimal(n / 1_000_000)}M`;
+  if (abs >= 10_000) return `${trimDecimal(n / 1_000)}k`;
+  return Math.round(n).toLocaleString();
+}
+
+function compactMoney(amount, code = "NPR") {
+  if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return "-";
+  return `${currency(code)} ${compactAmount(amount)}`;
+}
+
 const CATEGORY_GROUPS = [
   {
     name: "Bills",
@@ -109,6 +168,7 @@ const els = {
   statsBudgetStatus: $("#statsBudgetStatus"),
   attachName: $("#attachName"),
   attachClearBtn: $("#attachClearBtn"),
+  profileSavedNote: $("#profileSavedNote"),
 };
 
 function showAlert(message, tone = "info") {
@@ -225,11 +285,30 @@ function updateCategoryAmount(id, amount) {
       category.amount = Math.max(0, Number(amount) || 0);
       state.selectedCategoryId = id;
       saveCategoryBudgets();
-      renderBudgetPlan();
+      syncCategoryRowDisplay(category, group.name);
       renderFinanceRings();
       return;
     }
   }
+}
+
+// Updates the live UI without touching #categoryGroups' innerHTML: rebuilding it
+// mid-drag would destroy the exact <input type="range"> the browser has pointer
+// capture on, which is what made the slider only respond to discrete clicks.
+function syncCategoryRowDisplay(category, groupName) {
+  const code = currency(state.profile?.default_currency || state.goal?.currency || "NPR");
+  const row = document.querySelector(`[data-category-row="${category.id}"]`);
+  if (row) {
+    const amountEl = row.querySelector(".category-amount");
+    if (amountEl) amountEl.textContent = compactMoney(category.amount, code);
+    const sliderEl = row.querySelector(`[data-category-slider="${category.id}"]`);
+    if (sliderEl && document.activeElement !== sliderEl) {
+      sliderEl.value = String(amountToRaw(category.amount));
+      sliderEl.style.setProperty("--fill", sliderFillPercent(category.amount));
+    }
+    $$(".category-row").forEach((el) => el.classList.toggle("active", el.dataset.categoryRow === category.id));
+  }
+  renderTargetPanel({ ...category, group: groupName }, code);
 }
 
 function categoryBudgetTotal() {
@@ -275,11 +354,6 @@ function categorySpent(category) {
 
 function normalizeText(value) {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function categorySliderMax(category) {
-  const base = Number(category?.amount || 0);
-  return Math.max(10000, Math.ceil(Math.max(base * 2, 50000) / 500) * 500);
 }
 
 function displayLocation() {
@@ -372,25 +446,47 @@ async function loadProfile() {
   if (error) throw error;
   state.profile = data;
   refreshCurrencyDefaults();
+  if (els.profileSavedNote) els.profileSavedNote.classList.toggle("hidden", !data?.timezone && !data?.default_currency);
+}
+
+function detectedTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Katmandu";
+  } catch (_error) {
+    return "Asia/Katmandu";
+  }
+}
+
+function timezoneOptionsHtml(selected) {
+  const zone = selected || detectedTimezone();
+  const list = timezoneList();
+  const known = list.includes(zone);
+  const options = known ? list : [zone, ...list];
+  return options.map((tz) => `<option value="${tz}" ${tz === zone ? "selected" : ""}>${tz.replaceAll("_", " ")}</option>`).join("");
 }
 
 function refreshCurrencyDefaults() {
   const code = state.profile?.default_currency || "NPR";
+  const zone = state.profile?.timezone || detectedTimezone();
   populateCurrencySelect("profileCurrency", code);
   populateCurrencySelect("incomeCurrency", code);
   populateCurrencySelect("recurringCurrency", code);
+  const timezoneEl = $("#profileTimezone");
+  if (timezoneEl) timezoneEl.innerHTML = timezoneOptionsHtml(zone);
 }
 
 async function saveProfileCurrency() {
   const userId = state.session?.user?.id;
   if (!userId) throw new Error("Sign in first.");
   const code = currency($("#profileCurrency").value || "NPR");
-  const { error } = await requireClient().from("profiles").update({ default_currency: code }).eq("id", userId);
+  const timezone = $("#profileTimezone").value || detectedTimezone();
+  const { error } = await requireClient().from("profiles").update({ default_currency: code, timezone }).eq("id", userId);
   if (error) throw error;
   await loadProfile();
   renderFinanceRings();
   renderBudgetPlan();
-  showAlert("Default currency saved.");
+  if (els.profileSavedNote) els.profileSavedNote.classList.remove("hidden");
+  showAlert("Currency and location verified.");
 }
 
 async function loadGoal() {
@@ -560,8 +656,8 @@ function renderBudgetPlan() {
   const selected = findCategory();
 
   els.budgetMonth.textContent = monthLabel;
-  els.incomeTotalValue.textContent = money(incomeTotal, code);
-  els.assignedLine.textContent = `${money(assignedTotal, code)} assigned`;
+  els.incomeTotalValue.textContent = compactMoney(incomeTotal, code);
+  els.assignedLine.textContent = `${compactMoney(assignedTotal, code)} assigned`;
 
   els.categoryGroups.innerHTML = state.categoryBudgets.map((group) => `
     <section class="category-group">
@@ -575,8 +671,8 @@ function renderBudgetPlan() {
               <small>${escapeHtml(group.name)}</small>
             </div>
           </div>
-          <span class="category-amount">${money(category.amount, code)}</span>
-          <input data-category-slider="${escapeAttr(category.id)}" type="range" min="0" max="${categorySliderMax(category)}" step="500" value="${Number(category.amount || 0)}" aria-label="${escapeAttr(category.label)} target">
+          <span class="category-amount">${compactMoney(category.amount, code)}</span>
+          <input data-category-slider="${escapeAttr(category.id)}" type="range" min="0" max="${SLIDER_RAW_MAX}" step="1" value="${amountToRaw(category.amount)}" style="--fill:${sliderFillPercent(category.amount)}" aria-label="${escapeAttr(category.label)} target">
         </article>
       `).join("")}
     </section>
@@ -596,12 +692,12 @@ function renderTargetPanel(category, code) {
   els.targetTitle.textContent = category.label;
   els.targetGroup.textContent = category.group;
   els.targetIcon.textContent = category.icon;
-  els.targetAmountValue.textContent = money(amount, code);
+  els.targetAmountValue.textContent = compactMoney(amount, code);
   els.targetHint.textContent = `${category.group} target`;
-  els.targetSlider.max = String(categorySliderMax(category));
-  els.targetSlider.value = String(amount);
-  els.targetSpentValue.textContent = money(spent, code);
-  els.targetRemainingValue.textContent = money(remaining, code);
+  els.targetSlider.value = String(amountToRaw(amount));
+  els.targetSlider.style.setProperty("--fill", sliderFillPercent(amount));
+  els.targetSpentValue.textContent = compactMoney(spent, code);
+  els.targetRemainingValue.textContent = compactMoney(remaining, code);
   els.targetProgressBar.style.width = `${progress}%`;
 }
 
@@ -611,14 +707,14 @@ function renderStatsBreakdown(code = currency(state.profile?.default_currency ||
   const expense = currentExpenseTotal();
   const remaining = Math.max(budget - expense, 0);
 
-  els.statsBudgetStatus.textContent = `${money(remaining, code)} left`;
+  els.statsBudgetStatus.textContent = `${compactMoney(remaining, code)} left`;
   els.statsCategoryList.innerHTML = allCategories().map((category) => {
     const spent = categorySpent(category);
     const progress = category.amount ? pct((spent / Number(category.amount)) * 100) : 0;
     return `
       <div class="stats-category-row">
         <strong>${escapeHtml(category.label)}</strong>
-        <span>${money(spent, code)} / ${money(category.amount, code)}</span>
+        <span>${compactMoney(spent, code)} / ${compactMoney(category.amount, code)}</span>
         <div class="progress"><span style="width:${progress}%"></span></div>
       </div>
     `;
@@ -986,6 +1082,15 @@ function switchView(view) {
   els.viewTitle.textContent = titles[view] || "Wallet Whisperer";
 }
 
+function switchMoneyTab(tab) {
+  $$(".money-tab").forEach((button) => {
+    const active = button.dataset.moneyTab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  $$(".money-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `money-${tab}`));
+}
+
 function option(value, selected) {
   return `<option value="${value}" ${value === selected ? "selected" : ""}>${value}</option>`;
 }
@@ -1014,6 +1119,7 @@ async function guard(action) {
 
 function bindEvents() {
   $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
+  $$(".money-tab").forEach((button) => button.addEventListener("click", () => switchMoneyTab(button.dataset.moneyTab)));
   $("#saveConfigBtn").addEventListener("click", () => guard(saveConfig));
   $("#signInBtn").addEventListener("click", () => guard(signIn));
   $("#signUpBtn").addEventListener("click", () => guard(signUp));
@@ -1059,10 +1165,13 @@ function bindEvents() {
   });
   els.categoryGroups.addEventListener("input", (event) => {
     const id = event.target?.dataset?.categorySlider;
-    if (id) updateCategoryAmount(id, event.target.value);
+    if (!id) return;
+    event.target.style.setProperty("--fill", `${(Number(event.target.value) / SLIDER_RAW_MAX) * 100}%`);
+    updateCategoryAmount(id, rawToAmount(event.target.value));
   });
   els.targetSlider.addEventListener("input", (event) => {
-    updateCategoryAmount(state.selectedCategoryId, event.target.value);
+    event.target.style.setProperty("--fill", `${(Number(event.target.value) / SLIDER_RAW_MAX) * 100}%`);
+    updateCategoryAmount(state.selectedCategoryId, rawToAmount(event.target.value));
   });
   els.draftList.addEventListener("input", (event) => {
     const id = event.target?.dataset?.draft;

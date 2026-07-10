@@ -127,8 +127,54 @@ textarea {
 }
 
 input[type="range"] {
+  --fill: 0%;
+  -webkit-appearance: none;
+  appearance: none;
   padding: 0;
-  accent-color: var(--accent);
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--fill), rgba(255, 255, 255, 0.12) var(--fill));
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid var(--accent-dark);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover,
+input[type="range"]::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid var(--accent-dark);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
 }
 
 label {
@@ -654,6 +700,81 @@ label {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.region-bar {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: row;
+  align-items: end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.region-bar label {
+  flex: 1;
+  min-width: 140px;
+  margin: 0;
+}
+
+.region-bar select {
+  padding: 8px 10px;
+}
+
+.region-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.region-note svg {
+  width: 16px;
+  height: 16px;
+}
+
+.money-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  width: fit-content;
+}
+
+.money-tab {
+  min-height: 34px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.money-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.money-tab.active {
+  background: var(--accent-dark);
+  color: #ffffff;
+}
+
+.money-panel {
+  display: none;
+  gap: 16px;
+}
+
+.money-panel.active {
+  display: grid;
+}
+
+.settings-row {
+  opacity: 0.92;
 }
 
 .assignment-card {
