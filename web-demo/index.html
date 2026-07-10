@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wallet Whisperer</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./styles.css">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">W</div>
+          <div>
+            <h1>Wallet Whisperer</h1>
+            <p>Close the day.</p>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Primary">
+          <button class="nav-item active" data-view="capture"><i data-lucide="sparkles"></i><span>Capture</span></button>
+          <button class="nav-item" data-view="review"><i data-lucide="inbox"></i><span>Review</span></button>
+          <button class="nav-item" data-view="report"><i data-lucide="line-chart"></i><span>Report</span></button>
+          <button class="nav-item" data-view="settings"><i data-lucide="settings"></i><span>Setup</span></button>
+        </nav>
+
+        <div class="side-stat">
+          <span>Pending</span>
+          <strong id="sidePending">0</strong>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p id="sessionLabel" class="eyebrow">Not connected</p>
+            <h2 id="viewTitle">Smart Capture</h2>
+          </div>
+          <div class="top-actions">
+            <button id="refreshBtn" class="icon-button" title="Refresh"><i data-lucide="refresh-cw"></i></button>
+            <button id="signOutBtn" class="ghost hidden">Sign out</button>
+          </div>
+        </header>
+
+        <section id="alert" class="alert hidden"></section>
+
+        <section class="view active" id="view-capture">
+          <div class="hero-band">
+            <div>
+              <p class="eyebrow">Today</p>
+              <h3 id="nightlyLine">No captured transactions yet.</h3>
+            </div>
+            <button id="nightlyBtn"><i data-lucide="moon"></i><span>Nightly Review</span></button>
+          </div>
+
+          <div class="layout-two">
+            <section class="panel">
+              <div class="section-head">
+                <h3>Quick Log</h3>
+                <span class="pill">Draft first</span>
+              </div>
+              <textarea id="captureInput" placeholder="Paid NPR 250 at Momo Ghar via wallet"></textarea>
+              <div class="button-row">
+                <button id="createDraftBtn"><i data-lucide="plus"></i><span>Create Draft</span></button>
+                <button id="parseBtn" class="secondary"><i data-lucide="scan-text"></i><span>Parse</span></button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h3>Forwarded Email</h3>
+                <span class="pill">Smart Capture</span>
+              </div>
+              <input id="emailSubject" placeholder="Payment alert">
+              <textarea id="emailInput" placeholder="Paste bank, wallet, receipt, or transaction email text"></textarea>
+              <button id="emailDraftBtn"><i data-lucide="mail-plus"></i><span>Create Email Draft</span></button>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="section-head">
+              <h3>Goal</h3>
+              <span id="goalStatus" class="pill">No active goal</span>
+            </div>
+            <div id="goalPreview" class="goal-preview"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-review">
+          <div class="hero-band">
+            <div>
+              <p class="eyebrow">Smart Capture Inbox</p>
+              <h3 id="reviewLine">Load tonight's drafts.</h3>
+            </div>
+            <div class="button-row compact">
+              <button id="recurringBtn" class="secondary"><i data-lucide="calendar-clock"></i><span>Fixed Cards</span></button>
+              <button id="loadReviewBtn"><i data-lucide="inbox"></i><span>Load Review</span></button>
+            </div>
+          </div>
+
+          <section class="draft-list" id="draftList"></section>
+          <div class="button-row sticky-actions">
+            <button id="confirmSelectedBtn"><i data-lucide="check"></i><span>Confirm Selected</span></button>
+            <button id="ignoreSelectedBtn" class="secondary"><i data-lucide="x"></i><span>Ignore Selected</span></button>
+          </div>
+        </section>
+
+        <section class="view" id="view-report">
+          <div class="report-grid">
+            <section class="metric">
+              <span>Total spent</span>
+              <strong id="metricSpent">-</strong>
+            </section>
+            <section class="metric">
+              <span>Flexible</span>
+              <strong id="metricFlexible">-</strong>
+            </section>
+            <section class="metric">
+              <span>Protected</span>
+              <strong id="metricProtected">-</strong>
+            </section>
+            <section class="metric">
+              <span>Streak</span>
+              <strong id="metricStreak">-</strong>
+            </section>
+          </div>
+
+          <section class="panel report-panel">
+            <div class="section-head">
+              <h3>Close Day</h3>
+              <button id="closeDayBtn"><i data-lucide="sunset"></i><span>Generate Report</span></button>
+            </div>
+            <div class="report-copy">
+              <p id="reportInsight">Your report will appear after you close the day.</p>
+              <strong id="reportAchievement"></strong>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-settings">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="section-head">
+                <h3>Connection</h3>
+                <span class="pill">Browser only</span>
+              </div>
+              <label>Supabase URL<input id="supabaseUrl" placeholder="https://lzbtttgggoxumbcjqqsu.supabase.co"></label>
+              <label>Anon key<input id="anonKey" placeholder="Paste anon public key"></label>
+              <label>Email<input id="email" type="email" placeholder="you@example.com"></label>
+              <label>Password<input id="password" type="password" placeholder="Minimum 6 characters"></label>
+              <div class="button-row">
+                <button id="saveConfigBtn" class="secondary"><i data-lucide="save"></i><span>Save</span></button>
+                <button id="signInBtn"><i data-lucide="log-in"></i><span>Sign in</span></button>
+                <button id="signUpBtn" class="secondary"><i data-lucide="user-plus"></i><span>Sign up</span></button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h3>Active Goal</h3>
+                <span class="pill">One Rival</span>
+              </div>
+              <label>Goal name<input id="goalName" placeholder="Pokhara Trip"></label>
+              <label>Target amount<input id="goalAmount" type="number" min="1" placeholder="25000"></label>
+              <label>Currency<input id="goalCurrency" maxlength="3" placeholder="NPR"></label>
+              <button id="saveGoalBtn"><i data-lucide="target"></i><span>Save Goal</span></button>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

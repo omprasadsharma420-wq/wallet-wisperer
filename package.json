@@ -1,0 +1,11 @@
+{
+  "name": "wallet-whisperer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "node scripts/serve-web-demo.mjs",
+    "smoke": "node scripts/smoke-test.mjs",
+    "smoke:deployed": "node scripts/deployed-smoke-test.mjs"
+  }
+}

@@ -1,0 +1,11 @@
+.env
+.env.local
+.DS_Store
+node_modules/
+dist/
+.supabase/
+supabase/.temp/
+coverage/
+*.log
+scripts/set-secrets.ps1
+scripts/set-secrets.cmd

@@ -1,0 +1,51 @@
+project_id = "wallet-whisperer"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:3000", "http://localhost:5173"]
+jwt_expiry = 3600
+enable_signup = true
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[storage]
+enabled = true
+file_size_limit = "10MiB"
+
+[functions.parse-transaction]
+verify_jwt = true
+
+[functions.create-draft]
+verify_jwt = true
+
+[functions.confirm-drafts]
+verify_jwt = true
+
+[functions.close-day]
+verify_jwt = true
+
+[functions.generate-report]
+verify_jwt = true
+
+[functions.inbound-email]
+verify_jwt = false
+
+[functions.nightly-review]
+verify_jwt = true
+
+[functions.generate-recurring-drafts]
+verify_jwt = true
+
+[functions.health]
+verify_jwt = false

@@ -1,0 +1,26 @@
+[
+  {
+    "raw_text": "Paid NPR 250 at Momo Ghar via wallet",
+    "expected_kind": "expense",
+    "expected_category": "Food",
+    "expected_necessity": "flexible"
+  },
+  {
+    "raw_text": "NPR 120 bus fare cash",
+    "expected_kind": "expense",
+    "expected_category": "Transport",
+    "expected_necessity": "needed"
+  },
+  {
+    "raw_text": "Received NPR 5000 from freelance client",
+    "expected_kind": "income",
+    "expected_category": "Income",
+    "expected_necessity": "unknown"
+  },
+  {
+    "raw_text": "Rent paid Rs 18000 by bank transfer",
+    "expected_kind": "expense",
+    "expected_category": "Bills",
+    "expected_necessity": "fixed"
+  }
+]
