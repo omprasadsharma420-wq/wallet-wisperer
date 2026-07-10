@@ -1,6 +1,6 @@
 # Deployment Status
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 ## Live Supabase Project
 
@@ -22,7 +22,7 @@ The frontend public key is safe to use in web, mobile, and desktop clients. Do n
 - All Edge Functions deployed.
 - Hosted health check passed.
 - Hosted end-to-end smoke test passed.
-- OpenAI API validation returned `401`, so the deployed backend is currently using heuristic fallback parsing/report copy.
+- OpenAI API key was replaced and hosted validation confirmed draft creation via `gpt-4.1-mini`.
 
 ## Deployed Functions
 
@@ -44,8 +44,6 @@ There is no global cron job for recurring expenses yet. The frontend is responsi
 
 ## Still Needed
 
-- Replace `OPENAI_API_KEY` with a valid OpenAI API key.
-- Run hosted smoke test again and confirm draft model is `gpt-4.1-mini` instead of `heuristic-fallback-v1`.
 - Continue polishing the current `web-demo` frontend or port it into the team's final production frontend.
 
-Until a valid `OPENAI_API_KEY` is set, the deployed backend still works using heuristic fallback parsing and fallback report copy.
+Heuristic fallback parsing and fallback report copy remain available if the OpenAI call fails.

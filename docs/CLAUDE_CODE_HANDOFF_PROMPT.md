@@ -60,7 +60,7 @@ Important Supabase project info:
 - Project ref: `lzbtttgggoxumbcjqqsu`
 - Project URL: `https://lzbtttgggoxumbcjqqsu.supabase.co`
 - Frontend public key is already used in `web-demo/app.js`.
-- The deployed backend currently falls back to `heuristic-fallback-v1` because the OpenAI API key previously provided was invalid. Replace `OPENAI_API_KEY` in Supabase Edge Function secrets with a valid key before expecting OpenAI parsing.
+- A valid `OPENAI_API_KEY` was set in Supabase Edge Function secrets on July 11, 2026, and hosted smoke validation confirmed draft creation via `gpt-4.1-mini`. Heuristic fallback remains available if OpenAI calls fail.
 
 Key backend files:
 
@@ -194,7 +194,7 @@ Next useful improvements:
 3. Add a real category-budget table and RLS migration if persistence is required.
 4. Improve Stats with clean, Apple-like charts without making it visually noisy.
 5. Keep the demo fast: avoid adding broad features that weaken the nightly loop.
-6. Replace the invalid OpenAI API key in Supabase secrets and rerun hosted smoke tests.
+6. Rerun hosted smoke tests after any secret, schema, or Edge Function change.
 
 Validation Already Passed Before Handoff
 
@@ -204,6 +204,7 @@ Validation Already Passed Before Handoff
 - Mobile browser check for Capture at 390px width.
 - Mobile `Expense and Income` DOM/layout check: 10 rows, 10 sliders, no horizontal overflow.
 - Local demo server responded `200` at `http://localhost:4173`.
+- Hosted smoke test after OpenAI secret replacement confirmed draft model `gpt-4.1-mini`.
 
 Before finishing any change, run at least:
 
