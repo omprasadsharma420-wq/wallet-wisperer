@@ -662,46 +662,45 @@ label {
 }
 
 .quick-log-panel {
-  position: relative;
   padding: 22px;
   gap: 14px;
 }
 
 .capture-celebration {
-  position: absolute;
-  left: 22px;
-  right: 22px;
-  bottom: 22px;
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  width: min(360px, calc(100vw - 32px));
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, rgba(2, 195, 154, 0.18), rgba(2, 195, 154, 0.06));
+  background: linear-gradient(135deg, rgba(2, 195, 154, 0.2), rgba(10, 16, 15, 0.96));
   border: 1px solid rgba(2, 195, 154, 0.34);
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.34);
   pointer-events: none;
   opacity: 0;
-  z-index: 5;
+  z-index: 60;
+  transform: translateX(-50%) translateY(-8px) scale(0.95);
 }
 
 .capture-celebration.show {
-  animation: captureCelebrationIn var(--dur-slow) var(--ease-out) forwards;
+  animation: captureCelebrationIn 200ms var(--ease-out) forwards;
 }
 
 .capture-celebration.hide {
-  animation: captureCelebrationOut var(--dur-med) var(--ease-out) forwards;
+  animation: captureCelebrationOut 180ms var(--ease-out) forwards;
 }
 
 @keyframes captureCelebrationIn {
-  0% { opacity: 0; transform: translateY(10px) scale(0.96); }
-  55% { opacity: 1; transform: translateY(-3px) scale(1.01); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+  0% { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.95); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
 
 @keyframes captureCelebrationOut {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  from { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  to { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.97); }
 }
 
 .capture-celebration-icon {
@@ -743,9 +742,7 @@ label {
 
 @media (max-width: 560px) {
   .capture-celebration {
-    left: 14px;
-    right: 14px;
-    bottom: 14px;
+    top: 12px;
     padding: 12px 14px;
   }
 }
@@ -1711,6 +1708,145 @@ label {
 
 .undo-btn {
   justify-self: start;
+}
+
+/* Close the Day — list review */
+.close-list-flow {
+  width: min(640px, 100%);
+  align-self: start;
+  display: grid;
+  gap: 14px;
+  padding-bottom: 8px;
+}
+
+.close-list-head h3 {
+  margin: 0;
+  font-size: clamp(22px, 4vw, 30px);
+  line-height: 1.1;
+}
+
+.close-list-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.close-list-tally {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  width: fit-content;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.close-list-rows {
+  display: grid;
+  gap: 10px;
+}
+
+.close-list-row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.close-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.close-row-fields {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.close-row-name {
+  min-width: 0;
+}
+
+.close-row-amount {
+  width: 128px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.close-row-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.close-row-category {
+  min-width: 0;
+  flex: 1 1 160px;
+}
+
+.close-row-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.row-chip {
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.row-chip:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.row-chip.active {
+  background: var(--teal-600);
+  border-color: var(--teal-600);
+  color: #fff;
+}
+
+.row-chip.mint.active {
+  background: var(--mint-400);
+  border-color: var(--mint-400);
+  color: #06211d;
+}
+
+.close-list-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.close-list-actions button {
+  width: 100%;
+  min-height: 54px;
+  font-size: 16px;
+  justify-content: center;
+}
+
+@media (max-width: 560px) {
+  .close-row-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .close-row-amount {
+    width: 100%;
+    text-align: left;
+  }
 }
 
 .report-card {

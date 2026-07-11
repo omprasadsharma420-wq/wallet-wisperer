@@ -1359,8 +1359,8 @@ function showCaptureCelebration(count) {
   captureCelebrationTimer = window.setTimeout(() => {
     el.classList.remove("show");
     el.classList.add("hide");
-    window.setTimeout(() => el.classList.add("hidden"), 260);
-  }, 2400);
+    window.setTimeout(() => el.classList.add("hidden"), 190);
+  }, 1700);
 }
 
 // Used to cancel an optimistic celebration if the save it was celebrating
@@ -1525,15 +1525,6 @@ function renderNudge(notification) {
   els.nudgeBar.classList.remove("hidden");
 }
 
-function closeDayTally() {
-  return Object.values(state.closeDecisions).reduce((totals, decision) => {
-    const amount = Number(decision.transaction?.amount || decision.amount || 0);
-    if (decision.tag === "skipped") totals.protected += amount;
-    else if (decision.tag === "spent" || decision.tag === "needed" || decision.tag === "fixed") totals.spent += amount;
-    return totals;
-  }, { spent: 0, protected: 0 });
-}
-
 function draftTitle(draft) {
   return correctedDraftMerchant(draft) || correctedDraftCategory(draft) || "Possible transaction";
 }
@@ -1543,14 +1534,6 @@ function draftSourceLabel(draft) {
   if (draft?.source === "screenshot") return "receipt";
   if (draft?.source === "manual") return "typed";
   return draft?.source || "captured";
-}
-
-function progressDots() {
-  return state.drafts.map((draft, index) => {
-    const done = Boolean(state.closeDecisions[draft.id]);
-    const active = index === state.closeIndex;
-    return `<i class="${done ? "done" : ""} ${active ? "active" : ""}"></i>`;
-  }).join("");
 }
 
 function renderCloseDayStage() {
@@ -1567,7 +1550,7 @@ function renderCloseDayStage() {
   }
 
   if (state.closeStage === "cards" && state.drafts.length) {
-    renderCloseCardStage();
+    renderCloseListStage();
     return;
   }
 
@@ -1595,189 +1578,154 @@ function renderCloseInviteStage() {
   if (window.lucide) window.lucide.createIcons();
 }
 
-function renderCloseCardStage() {
-  const draft = state.drafts[state.closeIndex] || state.drafts[0];
-  if (!draft) {
+const CLOSE_CATEGORY_OPTIONS = ["Rent/Mortgage", "Food/Groceries", "Transport", "Utilities", "Bills", "Groceries", "Subscriptions", "Flexible", "Shopping", "Health", "Education", "Uncategorized"];
+
+// Guarantees the select's visible/submitted value always matches the real
+// parsed category, even if it's not one of the standard options above
+// (e.g. "Income", or a free-text category from an LLM parse) — otherwise a
+// <select> with no matching option silently falls back to showing (and
+// submitting) whatever option happens to be listed first.
+function closeCategoryOptionsHtml(selected) {
+  const list = CLOSE_CATEGORY_OPTIONS.includes(selected) ? CLOSE_CATEGORY_OPTIONS : [selected, ...CLOSE_CATEGORY_OPTIONS];
+  return list.map((item) => option(item, selected)).join("");
+}
+
+// Default necessity tag before the user touches a row. Bills and AI-suggested
+// recurring items are pre-classified to match what the AI already inferred;
+// everything else defaults to "spent" — the honest, conservative choice,
+// since only an explicit tap should ever mark something "Skipped" and count
+// it as protected money.
+function defaultCloseRowTag(isFixed, isSuggestedRecurring) {
+  if (isFixed) return "fixed";
+  if (isSuggestedRecurring) return "needed";
+  return "spent";
+}
+
+function closeRowChipsHtml(isFixed, isSuggestedRecurring) {
+  if (isFixed) return "";
+  if (isSuggestedRecurring) {
+    return `
+      <div class="close-row-chips" role="group" aria-label="Track this monthly?">
+        <button type="button" class="row-chip active" data-recurring-choice="true">Track monthly</button>
+        <button type="button" class="row-chip" data-recurring-choice="false">Just once</button>
+      </div>
+    `;
+  }
+  return `
+    <div class="close-row-chips" role="group" aria-label="How should this count?">
+      <button type="button" class="row-chip active" data-necessity-choice="spent">Spent</button>
+      <button type="button" class="row-chip" data-necessity-choice="needed">Needed</button>
+      <button type="button" class="row-chip mint" data-necessity-choice="skipped">Skipped</button>
+    </div>
+  `;
+}
+
+function closeListRowHtml(draft, code) {
+  const id = draft.id;
+  const amount = Number(draft.parsed_amount ?? 0);
+  const merchant = correctedDraftMerchant(draft) || "";
+  const category = correctedDraftCategory(draft) || "Uncategorized";
+  const isFixed = correctedDraftNecessity(draft) === "fixed" || draft.source === "recurring";
+  const isSuggestedRecurring = Boolean(!isFixed && draft.suggested_recurring && isAutoFileBillsEnabled());
+  const tag = defaultCloseRowTag(isFixed, isSuggestedRecurring);
+  const shouldTrackMonthly = isFixed
+    ? Boolean((draft?.suggested_recurring || correctedDraftNecessity(draft) === "fixed") && isAutoFileBillsEnabled())
+    : isSuggestedRecurring;
+
+  return `
+    <article class="close-list-row" data-close-row="${id}" data-tag="${tag}" data-create-recurring="${shouldTrackMonthly}">
+      <div class="close-row-top">
+        <span class="source-tag">${escapeHtml(draftSourceLabel(draft))}</span>
+        ${isFixed ? "<span class=\"bill-tag\">Bill</span>" : ""}
+      </div>
+      <div class="close-row-fields">
+        <input class="close-row-name" data-draft="${id}" data-field="merchant" value="${escapeAttr(merchant)}" placeholder="What was it?" aria-label="Name">
+        <input class="close-row-amount" data-draft="${id}" data-field="amount" type="number" min="0.01" step="0.01" value="${escapeAttr(amount || "")}" aria-label="Amount">
+      </div>
+      <div class="close-row-bottom">
+        <select class="close-row-category" data-draft="${id}" data-field="category" aria-label="Category">
+          ${closeCategoryOptionsHtml(category)}
+        </select>
+        ${closeRowChipsHtml(isFixed, isSuggestedRecurring)}
+      </div>
+      ${draft.source === "screenshot" && draft.source_reference ? `<div class="receipt-slot" data-receipt="${id}"></div>` : ""}
+    </article>
+  `;
+}
+
+function renderCloseListStage() {
+  if (!state.drafts.length) {
     state.closeStage = "invite";
     renderCloseInviteStage();
     return;
   }
-  const decision = state.closeDecisions[draft.id];
-  const code = draft.parsed_currency || state.profile?.default_currency || "NPR";
-  const amount = Number(decision?.amount ?? draft.parsed_amount ?? 0);
-  const category = decision?.category ?? correctedDraftCategory(draft) ?? "Uncategorized";
-  const isFixed = correctedDraftNecessity(draft) === "fixed" || draft.source === "recurring";
-  const tally = closeDayTally();
+  const code = currency(state.profile?.default_currency || state.goal?.currency || "NPR");
+  const count = state.drafts.length;
   els.closeDayStage.innerHTML = `
-    <section class="close-flow">
-      <div class="close-progress" aria-label="Close the Day progress">${progressDots()}</div>
-      <div class="session-summary"><span>Spent ${money(tally.spent, code)}</span><span>Protected ${money(tally.protected, code)}</span></div>
-      <article class="ritual-card review-card ${isFixed ? "bill-card" : ""}">
-        ${isFixed ? "<span class=\"bill-tag\">Bill</span>" : ""}
-        <span class="source-tag">${escapeHtml(draftSourceLabel(draft))}</span>
-        <h3>${escapeHtml(draftTitle(draft))}</h3>
-        <strong class="card-amount">${money(amount, code)}</strong>
-        <div class="inline-edit">
-          <label>Amount<input id="cardAmountInput" type="number" min="0" step="0.01" value="${escapeAttr(amount || "")}"></label>
-          <label>Category<select id="cardCategoryInput">
-            ${["Rent/Mortgage", "Food/Groceries", "Transport", "Utilities", "Bills", "Groceries", "Subscriptions", "Flexible", "Shopping", "Health", "Education", "Uncategorized"].map((item) => option(item, category)).join("")}
-          </select></label>
-        </div>
-        ${decision ? closeDecisionRevealHtml(decision, draft, code) : isFixed ? fixedDecisionButtonsHtml(draft) : decisionButtonsHtml(draft)}
-        ${state.closeLastAction?.draftId === draft.id ? "<button id=\"undoCloseActionBtn\" class=\"ghost undo-btn\" type=\"button\"><i data-lucide=\"undo-2\"></i><span>Undo last tap</span></button>" : ""}
-      </article>
+    <section class="close-list-flow">
+      <div class="close-list-head">
+        <h3>${count} ${count === 1 ? "thing" : "things"} to close</h3>
+        <p>Everything look right? Confirm it all at once — or fix a name or amount in any row first.</p>
+      </div>
+      <div class="close-list-tally" id="closeListTally"></div>
+      <div class="close-list-rows">
+        ${state.drafts.map((draft) => closeListRowHtml(draft, code)).join("")}
+      </div>
+      <div class="close-list-actions sticky-actions">
+        <button id="confirmAllCloseBtn" type="button"><i data-lucide="check-check"></i><span>Confirm all (${count})</span></button>
+      </div>
     </section>
   `;
   if (window.lucide) window.lucide.createIcons();
+  attachReceiptThumbnails();
+  updateCloseListTally();
 }
 
-function decisionButtonsHtml(draft) {
-  if (draft.suggested_recurring && isAutoFileBillsEnabled()) {
-    return `
-      <div class="decision-stack">
-        <p class="draft-meta">Add '${escapeHtml(draftTitle(draft))}' as a monthly bill?</p>
-        <button class="decision-btn" data-close-action="needed" data-create-recurring="true" type="button"><i data-lucide="repeat"></i><span>Track monthly</span></button>
-        <button class="decision-btn secondary" data-close-action="needed" data-create-recurring="false" type="button"><i data-lucide="dot"></i><span>Just this once</span></button>
-      </div>
-    `;
-  }
-  return `
-    <div class="decision-stack">
-      <button class="decision-btn" data-close-action="spent" type="button"><i data-lucide="receipt"></i><span>Spent</span></button>
-      <button class="decision-btn secondary" data-close-action="needed" type="button"><i data-lucide="shield-check"></i><span>Needed</span></button>
-      <button class="decision-btn mint" data-close-action="skipped" type="button"><i data-lucide="piggy-bank"></i><span>Skipped</span></button>
-    </div>
-  `;
+function updateCloseListTally() {
+  const tallyEl = document.getElementById("closeListTally");
+  if (!tallyEl) return;
+  const code = currency(state.profile?.default_currency || state.goal?.currency || "NPR");
+  let spent = 0;
+  let protectedAmount = 0;
+  $$(".close-list-row").forEach((row) => {
+    const id = row.dataset.closeRow;
+    const amount = Number(draftEditValue(id, "amount")) || 0;
+    if (row.dataset.tag === "skipped") protectedAmount += amount;
+    else spent += amount;
+  });
+  tallyEl.textContent = `Spent ${money(spent, code)} · Protected ${money(protectedAmount, code)}`;
 }
 
-function fixedDecisionButtonsHtml(draft) {
-  const shouldTrackMonthly = Boolean((draft?.suggested_recurring || correctedDraftNecessity(draft) === "fixed") && isAutoFileBillsEnabled());
-  return `
-    <div class="decision-stack">
-      <button class="decision-btn" data-close-action="fixed" data-create-recurring="${shouldTrackMonthly}" type="button"><i data-lucide="check"></i><span>Confirm</span></button>
-    </div>
-  `;
-}
-
-function closeDecisionRevealHtml(decision, draft, code) {
-  const title = draftTitle(draft);
-  if (decision.tag === "skipped") {
-    const percent = state.goal?.target_amount ? pct((Number(state.goal.current_saved_amount || 0) + Number(decision.amount || 0)) / Number(state.goal.target_amount) * 100) : 0;
-    return `
-      <div class="decision-reveal protected-reveal">
-        <strong>${money(decision.amount, code)} protected.</strong>
-        <div class="progress goal-pulse"><span style="width:${percent}%"></span></div>
-      </div>
-      ${nextCloseButtonHtml()}
-    `;
-  }
-  if (decision.tag === "spent" && decision.transaction?.goal_percent !== null && decision.transaction?.goal_percent !== undefined) {
-    return `
-      <div class="decision-reveal rival-reveal">
-        ${goalThumbHtml()}
-        <strong>That's ${Number(decision.transaction.goal_percent).toFixed(1)}% of ${escapeHtml(state.goal?.name || "your goal")}.</strong>
-      </div>
-      ${nextCloseButtonHtml()}
-    `;
-  }
-  if (decision.tag === "spent" && !state.goal && !state.goalPromptShown) {
-    state.goalPromptShown = true;
-    return `
-      <div class="decision-reveal">
-        <button id="openGoalFromCloseBtn" class="ghost" type="button">Set a goal and you'll see what each spend costs you.</button>
-      </div>
-      ${nextCloseButtonHtml()}
-    `;
-  }
-  return `
-    <div class="decision-reveal quiet-reveal">
-      <strong>${decision.tag === "fixed" ? `${escapeHtml(title)} confirmed.` : "Logged without goal pressure."}</strong>
-    </div>
-    ${nextCloseButtonHtml()}
-  `;
-}
-
-function goalThumbHtml() {
-  if (state.goalPhotoUrl) return `<img class="goal-thumb" src="${escapeAttr(state.goalPhotoUrl)}" alt="">`;
-  return `<span class="goal-thumb">${escapeHtml((state.goal?.name || "G").slice(0, 1).toUpperCase())}</span>`;
-}
-
-function nextCloseButtonHtml() {
-  const last = state.closeIndex >= state.drafts.length - 1;
-  return `<button id="nextCloseCardBtn" type="button"><span>${last ? "Finish the day" : "Next"}</span><i data-lucide="arrow-right"></i></button>`;
-}
-
-async function handleCloseDecision(tag, createRecurring = false) {
-  const draft = state.drafts[state.closeIndex];
-  if (!draft || state.closeDecisions[draft.id]) return;
-  const amount = Number($("#cardAmountInput")?.value || draft.parsed_amount || 0);
-  const category = $("#cardCategoryInput")?.value || correctedDraftCategory(draft) || "Uncategorized";
-  if (!amount || amount <= 0) throw new Error("Add a positive amount before closing this card.");
-
-  const necessity = tag === "needed" ? "needed" : tag === "fixed" ? "fixed" : "flexible";
-  const shouldCreateRecurring = Boolean(createRecurring || (tag === "fixed" && (draft.suggested_recurring || correctedDraftNecessity(draft) === "fixed") && isAutoFileBillsEnabled()));
-  const edits = {
-    [draft.id]: {
+async function confirmAllCloseList() {
+  const rows = $$(".close-list-row");
+  if (!rows.length) return;
+  const ids = [];
+  const edits = {};
+  for (const row of rows) {
+    const id = row.dataset.closeRow;
+    const draft = state.drafts.find((item) => item.id === id);
+    if (!draft) continue;
+    const amount = Number(draftEditValue(id, "amount"));
+    if (!amount || amount <= 0) throw new Error(`Add a positive amount for "${draftTitle(draft)}" before confirming.`);
+    const tag = row.dataset.tag || "spent";
+    const necessity = tag === "needed" ? "needed" : tag === "fixed" ? "fixed" : "flexible";
+    ids.push(id);
+    edits[id] = {
       amount,
       currency: currency(draft.parsed_currency || state.profile?.default_currency || "NPR"),
-      merchant: correctedDraftMerchant(draft) || correctedDraftCategory(draft) || "Transaction",
-      category,
+      merchant: draftEditValue(id, "merchant") || correctedDraftMerchant(draft) || "Transaction",
+      category: draftEditValue(id, "category") || correctedDraftCategory(draft) || "Uncategorized",
       kind: draft.parsed_kind || "expense",
       necessity,
       payment_method: draft.parsed_payment_method || "unknown",
       is_skipped_opportunity: tag === "skipped",
-      create_recurring: shouldCreateRecurring,
-    },
-  };
-
-  const data = await invoke("confirm-drafts", { confirm_ids: [draft.id], edits });
-  const transaction = data.confirmed_transactions?.[0] || null;
-  state.lastConfirmations = [...state.lastConfirmations, ...(transaction ? [transaction] : [])];
-  state.closeDecisions[draft.id] = {
-    tag,
-    amount,
-    category,
-    transaction,
-    recurring_count: data.recurring_count || 0,
-  };
-  state.closeLastAction = { draftId: draft.id, transactionId: transaction?.id || null };
-  state.pendingCount = Math.max(0, state.pendingCount - 1);
-  await refreshBackendSnapshot({ includeRecurring: shouldCreateRecurring || data.recurring_count > 0 });
-  saveCloseProgress();
-  renderCloseDayStage();
-}
-
-async function undoCloseAction() {
-  const action = state.closeLastAction;
-  if (!action?.draftId) return;
-  const decision = state.closeDecisions[action.draftId];
-  if (action.transactionId) {
-    const { error: deleteError } = await requireClient().from("transactions").delete().eq("id", action.transactionId);
-    if (deleteError) throw deleteError;
+      create_recurring: row.dataset.createRecurring === "true",
+    };
   }
-  const { error: draftError } = await requireClient()
-    .from("smart_capture_drafts")
-    .update({ status: "draft", needs_review: true })
-    .eq("id", action.draftId);
-  if (draftError) throw draftError;
-  delete state.closeDecisions[action.draftId];
-  state.closeLastAction = null;
-  state.lastConfirmations = state.lastConfirmations.filter((tx) => tx.id !== action.transactionId);
-  state.pendingCount += 1;
-  if (decision?.recurring_count > 0) await loadRecurringExpenses();
-  saveCloseProgress();
-  showAlert("Undone. You can choose again.");
-  await nightlyReview(false);
-  renderCloseDayStage();
-}
+  if (!ids.length) throw new Error("Nothing to confirm.");
 
-async function nextCloseCard() {
-  if (state.closeIndex < state.drafts.length - 1) {
-    state.closeIndex += 1;
-    saveCloseProgress();
-    renderCloseDayStage();
-    return;
-  }
+  const data = await invoke("confirm-drafts", { confirm_ids: ids, edits });
+  state.lastConfirmations = data.confirmed_transactions || [];
   await finishCloseDay();
 }
 
@@ -2888,25 +2836,36 @@ function bindEvents() {
       });
       return;
     }
-    const decision = event.target.closest("[data-close-action]");
-    if (decision) {
-      guard(() => handleCloseDecision(decision.dataset.closeAction, decision.dataset.createRecurring === "true"));
+    const necessityChip = event.target.closest("[data-necessity-choice]");
+    if (necessityChip) {
+      const row = necessityChip.closest("[data-close-row]");
+      if (row) {
+        row.dataset.tag = necessityChip.dataset.necessityChoice;
+        row.querySelectorAll("[data-necessity-choice]").forEach((chip) => chip.classList.toggle("active", chip === necessityChip));
+        updateCloseListTally();
+      }
       return;
     }
-    if (event.target.closest("#nextCloseCardBtn")) {
-      guard(nextCloseCard);
+    const recurringChip = event.target.closest("[data-recurring-choice]");
+    if (recurringChip) {
+      const row = recurringChip.closest("[data-close-row]");
+      if (row) {
+        row.dataset.createRecurring = recurringChip.dataset.recurringChoice;
+        row.querySelectorAll("[data-recurring-choice]").forEach((chip) => chip.classList.toggle("active", chip === recurringChip));
+      }
       return;
     }
-    if (event.target.closest("#undoCloseActionBtn")) {
-      guard(undoCloseAction);
-      return;
-    }
-    if (event.target.closest("#openGoalFromCloseBtn")) {
-      openGoalModal();
+    if (event.target.closest("#confirmAllCloseBtn")) {
+      guard(confirmAllCloseList);
       return;
     }
     if (event.target.closest("#seeTomorrowBtn")) {
       switchView("capture");
+    }
+  });
+  els.closeDayStage?.addEventListener("input", (event) => {
+    if (event.target?.dataset?.field === "amount" && event.target.closest("[data-close-row]")) {
+      updateCloseListTally();
     }
   });
   els.draftList?.addEventListener("input", (event) => {
