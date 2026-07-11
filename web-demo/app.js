@@ -1509,7 +1509,7 @@ function renderCloseInviteStage() {
       ${count ? "" : `
         <div class="quiet-composer">
           <textarea id="closeQuickInput" placeholder="250 momo"></textarea>
-          <button id="closeQuickSaveBtn" class="secondary" type="button"><i data-lucide="plus"></i><span>Save clue</span></button>
+          <button id="closeQuickSaveBtn" class="secondary" type="button"><i data-lucide="plus"></i><span>Add it</span></button>
         </div>
       `}
       <button id="startCloseDayBtn" type="button"><i data-lucide="${count ? "play" : "check"}"></i><span>${count ? "Close today" : "Close out clean"}</span></button>
@@ -2736,7 +2736,11 @@ function bindEvents() {
 
     const deleteButton = event.target.closest("[data-expense-delete]");
     if (deleteButton && deleteButton.dataset.expenseDelete) {
-      guard(() => deleteRecurringExpense(deleteButton.dataset.expenseDelete));
+      const id = deleteButton.dataset.expenseDelete;
+      const item = state.recurringExpenses.find((entry) => entry.id === id);
+      if (window.confirm(`Remove ${item?.label || "this monthly item"}? You can add it back anytime.`)) {
+        guard(() => deleteRecurringExpense(id));
+      }
       return;
     }
 
@@ -2773,7 +2777,13 @@ function bindEvents() {
       return;
     }
     const deleteButton = event.target.closest("[data-income-delete]");
-    if (deleteButton) guard(() => deleteIncomeSource(deleteButton.dataset.incomeDelete));
+    if (deleteButton) {
+      const id = deleteButton.dataset.incomeDelete;
+      const item = state.incomeSources.find((entry) => entry.id === id);
+      if (window.confirm(`Remove ${item?.label || "this income source"}? You can add it back anytime.`)) {
+        guard(() => deleteIncomeSource(id));
+      }
+    }
   });
   els.closeDayStage?.addEventListener("click", (event) => {
     const start = event.target.closest("#startCloseDayBtn");
