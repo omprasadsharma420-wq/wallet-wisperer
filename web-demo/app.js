@@ -1294,20 +1294,32 @@ async function uploadCaptureAttachment(file) {
 }
 
 async function quickLogDraft() {
-  const rawTextInput = $("#captureInput").value.trim();
+  const inputEl = $("#captureInput");
+  const rawTextInput = inputEl.value.trim();
   const file = state.captureAttachment;
   if (!rawTextInput && !file) throw new Error("Couldn't quite catch that. Try adding an amount, like '250 momo'.");
 
-  const sourceReference = file ? await uploadCaptureAttachment(file) : null;
   const rawText = rawTextInput || `Attached ${file.name}. Needs review, no description given.`;
 
-  const data = await createDraft(file ? "screenshot" : "manual", rawText, null, sourceReference);
-  $("#captureInput").value = "";
+  // Clear and celebrate the instant the user clicks — the save happening on the
+  // network (create-draft can call OpenAI to parse the text, then nightly-review
+  // refreshes the count) used to run BEFORE any of this, so the typed text just
+  // sat there for a second or two looking stuck. Roll it back if the save fails.
+  inputEl.value = "";
   $("#captureAttachment").value = "";
   setCaptureAttachment(null);
-  showCaptureCelebration(state.pendingCount);
-  $("#captureInput").focus();
-  return data;
+  inputEl.focus();
+  showCaptureCelebration((state.pendingCount || 0) + 1);
+
+  try {
+    const sourceReference = file ? await uploadCaptureAttachment(file) : null;
+    return await createDraft(file ? "screenshot" : "manual", rawText, null, sourceReference);
+  } catch (error) {
+    hideCaptureCelebration();
+    inputEl.value = rawTextInput;
+    if (file) setCaptureAttachment(file);
+    throw error;
+  }
 }
 
 // Escalating, never-shaming praise for the running count of clues waiting
@@ -1349,6 +1361,16 @@ function showCaptureCelebration(count) {
     el.classList.add("hide");
     window.setTimeout(() => el.classList.add("hidden"), 260);
   }, 2400);
+}
+
+// Used to cancel an optimistic celebration if the save it was celebrating
+// turns out to have failed on the network.
+function hideCaptureCelebration() {
+  const el = document.getElementById("captureCelebration");
+  if (!el) return;
+  window.clearTimeout(captureCelebrationTimer);
+  el.classList.remove("show", "hide");
+  el.classList.add("hidden");
 }
 
 async function parsePreview() {
