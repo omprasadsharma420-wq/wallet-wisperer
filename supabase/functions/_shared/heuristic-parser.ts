@@ -8,14 +8,66 @@ import {
 } from "./models.ts";
 
 const categoryRules: Array<{ category: string; necessity: Necessity; pattern: RegExp }> = [
-  { category: "Food", necessity: "flexible", pattern: /\b(momo|coffee|cafe|snack|restaurant|pizza|burger|tea|lunch|dinner)\b/i },
+  { category: "Food/Groceries", necessity: "flexible", pattern: /\b(momo|coffee|cafe|snack|restaurant|pizza|burger|tea|lunch|dinner|grocery|groceries|food)\b/i },
   { category: "Transport", necessity: "needed", pattern: /\b(bus|taxi|ride|uber|pathao|indrive|fuel|petrol|transport)\b/i },
-  { category: "Bills", necessity: "fixed", pattern: /\b(rent|electricity|internet|wifi|subscription|bill|emi|loan)\b/i },
+  { category: "Rent/Mortgage", necessity: "fixed", pattern: /\b(rent|mortgage|apartment|landlord)\b/i },
+  { category: "Utilities", necessity: "fixed", pattern: /\b(electricity|electric|water|internet|wifi|phone|utility|utilities|bill)\b/i },
+  { category: "Subscriptions", necessity: "fixed", pattern: /\b(subscription|netflix|spotify|prime|gym|plan|software|saas)\b/i },
   { category: "Shopping", necessity: "flexible", pattern: /\b(shop|shopping|shirt|clothes|daraz|amazon|market)\b/i },
   { category: "Health", necessity: "needed", pattern: /\b(medicine|doctor|hospital|clinic|pharmacy)\b/i },
   { category: "Education", necessity: "needed", pattern: /\b(course|book|tuition|school|college)\b/i },
   { category: "Income", necessity: "unknown", pattern: /\b(received|credited|salary|freelance|paid to you|deposit)\b/i },
 ];
+
+function weakLabel(value: string | null | undefined): boolean {
+  return !value || /^(unknown|uncategorized|transaction|payment|expense)$/i.test(value.trim());
+}
+
+function keywordMerchant(rawText: string, fallback: string): string {
+  const lowered = rawText.toLowerCase();
+  const keywords = [
+    "rent", "mortgage", "internet", "wifi", "phone", "electricity", "water",
+    "netflix", "spotify", "subscription", "momo", "coffee", "groceries",
+    "grocery", "taxi", "bus", "fuel", "medicine", "pharmacy",
+  ];
+  return keywords.find((keyword) => lowered.includes(keyword)) || fallback;
+}
+
+export function applyDeterministicCorrections(
+  rawText: string,
+  parsed: ParsedTransaction,
+  defaultCurrency = "NPR",
+): ParsedTransaction {
+  const text = rawText.trim();
+  const incomeLike = /\b(received|credited|salary|income|deposit|freelance|refund|paid to you)\b/i.test(text);
+  const matchedRule = incomeLike ? categoryRules.find((rule) => rule.category === "Income") : categoryRules.find((rule) => rule.pattern.test(text));
+  if (!matchedRule) return parsed;
+
+  const corrected: ParsedTransaction = { ...parsed };
+  corrected.currency = normalizeCurrency(corrected.currency, defaultCurrency);
+
+  if (incomeLike) {
+    corrected.transaction_type = "income";
+    corrected.category = "Income";
+    corrected.necessity = "unknown";
+  } else {
+    corrected.transaction_type = corrected.transaction_type === "transfer" ? "transfer" : "expense";
+    corrected.category = matchedRule.category;
+    corrected.necessity = corrected.transaction_type === "expense" ? matchedRule.necessity : "unknown";
+  }
+
+  if (weakLabel(corrected.merchant)) {
+    corrected.merchant = keywordMerchant(text, corrected.category);
+  }
+
+  corrected.confidence = clampConfidence(Math.max(Number(corrected.confidence || 0), 0.9));
+  corrected.needs_review = true;
+  corrected.notes = corrected.notes
+    ? `${corrected.notes} Category checked against Wallet Whisperer rules.`
+    : "Category checked against Wallet Whisperer rules. Please review before confirming.";
+
+  return corrected;
+}
 
 export function parseTransactionHeuristically(rawText: string, defaultCurrency = "NPR"): ParsedTransaction {
   const text = rawText.trim();
@@ -56,7 +108,7 @@ export function parseTransactionHeuristically(rawText: string, defaultCurrency =
       (merchant ? 0.1 : 0),
   );
 
-  return {
+  return applyDeterministicCorrections(text, {
     amount,
     currency,
     merchant,
@@ -70,5 +122,5 @@ export function parseTransactionHeuristically(rawText: string, defaultCurrency =
     notes: lowered.length > 160
       ? "Parsed from a longer message; please confirm merchant/category."
       : "Parsed locally without OpenAI because no API key was available or fallback was requested.",
-  };
+  }, defaultCurrency);
 }

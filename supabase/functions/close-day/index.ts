@@ -61,6 +61,8 @@ Deno.serve(async (req) => {
     const neededSpent = money(expenses.filter((tx) => tx.necessity === "needed").reduce((sum, tx) => sum + asNumber(tx.amount), 0));
     const fixedSpent = money(expenses.filter((tx) => tx.necessity === "fixed").reduce((sum, tx) => sum + asNumber(tx.amount), 0));
     const protectedAmount = money(protectedTransactions.reduce((sum, tx) => sum + asNumber(tx.amount), 0));
+    const totalLoggedAmount = money((transactions ?? []).reduce((sum, tx) => sum + asNumber(tx.amount), 0));
+    const totalLogMessage = `This is your total amount from the logs you have made today: ${profile.default_currency ?? goal?.currency ?? "NPR"} ${totalLoggedAmount.toFixed(0)}.`;
     const goalDeltaPercent = goal?.target_amount
       ? Number(((flexibleSpent - protectedAmount) / asNumber(goal.target_amount) * 100).toFixed(4))
       : 0;
@@ -121,7 +123,7 @@ Deno.serve(async (req) => {
         draft_count: drafts?.length ?? 0,
         confirmed_count: transactions?.length ?? 0,
         goal_delta_percent: goalDeltaPercent,
-        insight: summary.insight,
+        insight: totalLogMessage,
         achievement: summary.achievement,
         mood: summary.mood,
       }, { onConflict: "user_id,report_date" })
@@ -155,7 +157,12 @@ Deno.serve(async (req) => {
     });
 
     return jsonResponse({
-      report,
+      report: {
+        ...report,
+        total_logged_amount: totalLoggedAmount,
+        total_log_message: totalLogMessage,
+        ai_insight: summary.insight,
+      },
       streak: {
         current_count: currentCount,
         longest_count: longestCount,

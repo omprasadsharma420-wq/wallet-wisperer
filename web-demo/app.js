@@ -170,6 +170,16 @@ const state = {
   selectedPaymentMethod: null,
   goalPhotoFile: null,
   goalPhotoUrl: null,
+  stats: {
+    range: "30d",
+    loaded: false,
+    loading: false,
+    dirty: false,
+    streak: null,
+    dailyReports: [],
+    transactions: [],
+    charts: {},
+  },
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -193,18 +203,10 @@ const els = {
   goalPreview: $("#goalPreview"),
   incomeList: $("#incomeList"),
   recurringList: $("#recurringList"),
-  metricSpent: $("#metricSpent"),
-  metricFlexible: $("#metricFlexible"),
-  metricProtected: $("#metricProtected"),
-  metricStreak: $("#metricStreak"),
-  reportInsight: $("#reportInsight"),
-  reportAchievement: $("#reportAchievement"),
   captureRings: $("#captureRings"),
-  statsRings: $("#statsRings"),
   ringCenterValue: $("#ringCenterValue"),
   ringCenterLabel: $("#ringCenterLabel"),
   ringCenterHint: $("#ringCenterHint"),
-  statsCenterValue: $("#statsCenterValue"),
   budgetMonth: $("#budgetMonth"),
   incomeTotalValue: $("#incomeTotalValue"),
   assignedLine: $("#assignedLine"),
@@ -218,8 +220,6 @@ const els = {
   targetSpentValue: $("#targetSpentValue"),
   targetRemainingValue: $("#targetRemainingValue"),
   targetProgressBar: $("#targetProgressBar"),
-  statsCategoryList: $("#statsCategoryList"),
-  statsBudgetStatus: $("#statsBudgetStatus"),
   attachName: $("#attachName"),
   attachClearBtn: $("#attachClearBtn"),
   profileSavedNote: $("#profileSavedNote"),
@@ -257,6 +257,12 @@ function initClient() {
 function requireClient() {
   if (!state.supabase) throw new Error("Save Supabase URL and public key first.");
   return state.supabase;
+}
+
+function requireSession() {
+  if (state.session?.user?.id) return state.session;
+  openMoneySettingsModal();
+  throw new Error("Sign in to save and sync your finance data.");
 }
 
 function today() {
@@ -525,6 +531,39 @@ function normalizeText(value) {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function weakFinanceLabel(value) {
+  return !value || /^(unknown|uncategorized|transaction|payment|expense)$/i.test(String(value).trim());
+}
+
+function deterministicDraftHint(draft) {
+  const text = `${draft?.raw_text || ""} ${draft?.raw_subject || ""}`.toLowerCase();
+  const rules = [
+    { pattern: /\b(rent|mortgage|apartment|landlord)\b/i, merchant: "rent", category: "Rent/Mortgage", necessity: "fixed" },
+    { pattern: /\b(internet|wifi|phone|electricity|electric|water|utility|utilities|bill)\b/i, merchant: "utilities", category: "Utilities", necessity: "fixed" },
+    { pattern: /\b(subscription|netflix|spotify|prime|gym|plan|software|saas)\b/i, merchant: "subscription", category: "Subscriptions", necessity: "fixed" },
+    { pattern: /\b(momo|coffee|cafe|snack|restaurant|pizza|burger|tea|lunch|dinner|grocery|groceries|food)\b/i, merchant: "food", category: "Food/Groceries", necessity: "flexible" },
+    { pattern: /\b(bus|taxi|ride|uber|pathao|indrive|fuel|petrol|transport)\b/i, merchant: "transport", category: "Transport", necessity: "needed" },
+    { pattern: /\b(medicine|doctor|hospital|clinic|pharmacy|health)\b/i, merchant: "health", category: "Health", necessity: "needed" },
+    { pattern: /\b(course|book|tuition|school|college|education)\b/i, merchant: "education", category: "Education", necessity: "needed" },
+  ];
+  return rules.find((rule) => rule.pattern.test(text)) || null;
+}
+
+function correctedDraftMerchant(draft) {
+  const hint = deterministicDraftHint(draft);
+  return weakFinanceLabel(draft?.parsed_merchant) && hint ? hint.merchant : draft?.parsed_merchant;
+}
+
+function correctedDraftCategory(draft) {
+  const hint = deterministicDraftHint(draft);
+  return weakFinanceLabel(draft?.parsed_category) && hint ? hint.category : draft?.parsed_category;
+}
+
+function correctedDraftNecessity(draft) {
+  const hint = deterministicDraftHint(draft);
+  return (draft?.parsed_necessity === "unknown" || !draft?.parsed_necessity) && hint ? hint.necessity : draft?.parsed_necessity;
+}
+
 function displayLocation() {
   const timezone = state.profile?.timezone || detectedTimezone();
   const place = timezone.split("/").pop().replaceAll("_", " ").replace("Katmandu", "Kathmandu");
@@ -533,6 +572,7 @@ function displayLocation() {
 }
 
 async function invoke(name, body = {}) {
+  requireSession();
   const { data, error } = await requireClient().functions.invoke(name, { body });
   if (error) throw error;
   return data;
@@ -555,7 +595,7 @@ async function loadSession() {
 
 function renderSession() {
   const email = state.session?.user?.email;
-  els.sessionLabel.textContent = email ? email.replace(/(.{18}).+(@.*)/, "$1...$2") : "Demo mode";
+  els.sessionLabel.textContent = email ? email.replace(/(.{18}).+(@.*)/, "$1...$2") : "Sign in";
   els.sessionPill?.classList.toggle("connected", Boolean(email));
   $("#signOutBtn").classList.toggle("hidden", !email);
 }
@@ -600,12 +640,36 @@ async function signOut() {
     recurringExpenses: [],
     lastConfirmations: [],
     pendingCount: 0,
+    closeStage: "invite",
+    closeIndex: 0,
+    closeDecisions: {},
+    closeLastAction: null,
+    goalPhotoFile: null,
+    goalPhotoUrl: null,
+    stats: {
+      range: "30d",
+      loaded: false,
+      loading: false,
+      dirty: false,
+      streak: null,
+      dailyReports: [],
+      transactions: [],
+      charts: {},
+    },
   });
   renderAll();
 }
 
 async function runStartupSync({ silent }) {
-  await Promise.all([loadProfile(), loadGoal(), loadIncomeSources(), loadRecurringExpenses()]);
+  await Promise.all([
+    loadProfile(),
+    loadGoal(),
+    loadIncomeSources(),
+    loadRecurringExpenses(),
+    loadRecentTransactions(),
+    loadTodayReport(),
+    loadStreak(),
+  ]);
   const recurring = await generateRecurringDrafts({ silent: true });
   await nightlyReview(false);
   if (!silent && recurring.created_count > 0) showAlert(`${recurring.created_count} fixed card${recurring.created_count === 1 ? "" : "s"} created.`);
@@ -714,6 +778,45 @@ async function loadRecurringExpenses() {
   state.recurringExpenses = data || [];
   state.pendingExpenseAmounts = {};
   renderRecurringExpenses();
+}
+
+async function loadRecentTransactions() {
+  const since = addDaysDate(new Date(), -30).toISOString();
+  const { data, error } = await requireClient()
+    .from("transactions")
+    .select("*")
+    .gte("occurred_at", since)
+    .order("occurred_at", { ascending: false });
+  if (error) throw error;
+  state.lastConfirmations = data || [];
+  renderConfirmations();
+}
+
+async function loadTodayReport() {
+  const { data, error } = await requireClient()
+    .from("daily_reports")
+    .select("*")
+    .eq("report_date", today())
+    .maybeSingle();
+  if (error) throw error;
+  state.report = data || null;
+}
+
+async function loadStreak() {
+  const { data, error } = await requireClient().from("streaks").select("*").maybeSingle();
+  if (error) throw error;
+  state.streak = data || null;
+}
+
+async function refreshBackendSnapshot({ includeRecurring = false, includeReview = false } = {}) {
+  const tasks = [loadGoal(), loadRecentTransactions(), loadTodayReport(), loadStreak()];
+  if (includeRecurring) tasks.push(loadRecurringExpenses());
+  await Promise.all(tasks);
+  if (includeReview) await nightlyReview(false);
+  state.stats.dirty = true;
+  renderFinanceRings();
+  renderBudgetPlan();
+  renderNudge();
 }
 
 async function saveGoal() {
@@ -1029,7 +1132,6 @@ function renderBudgetPlan() {
     `;
   }).join("");
 
-  renderStatsBreakdown(code);
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -1079,24 +1181,6 @@ function renderCommittedMeter(code = currency(state.profile?.default_currency ||
     : committed > safeIncome
       ? "Your commitments run a little past your income."
       : `${percent}% of your income has a job. The rest is yours to spend or protect.`;
-}
-
-function renderStatsBreakdown(code = currency(state.profile?.default_currency || state.goal?.currency || "NPR")) {
-  if (!els.statsCategoryList) return;
-  const expense = currentExpenseTotal();
-
-  els.statsBudgetStatus.textContent = `${compactMoney(expense, code)} flexible so far`;
-  els.statsCategoryList.innerHTML = allCategories().map((category) => {
-    const spent = categorySpent(category);
-    const progress = category.amount ? pct((spent / Number(category.amount)) * 100) : 0;
-    return `
-      <div class="stats-category-row">
-        <strong>${escapeHtml(category.label)}</strong>
-        <span>${compactMoney(category.amount, code)} monthly</span>
-        <div class="progress"><span style="width:${progress}%"></span></div>
-      </div>
-    `;
-  }).join("");
 }
 
 async function createDraft(source, rawText, subject = null, sourceReference = null) {
@@ -1269,8 +1353,7 @@ async function confirmSelected() {
   state.lastConfirmations = data.confirmed_transactions || [];
   renderConfirmations();
   showAlert(data.recurring_count > 0 ? "Rent will be waiting for you next month." : `${ids.length} draft${ids.length === 1 ? "" : "s"} confirmed.`);
-  if (data.recurring_count > 0) await loadRecurringExpenses();
-  await nightlyReview(false);
+  await refreshBackendSnapshot({ includeRecurring: data.recurring_count > 0, includeReview: true });
 }
 
 async function ignoreSelected() {
@@ -1281,18 +1364,6 @@ async function ignoreSelected() {
   renderConfirmations();
   showAlert(`${ids.length} draft${ids.length === 1 ? "" : "s"} ignored.`);
   await nightlyReview(false);
-}
-
-async function closeDay() {
-  const data = await invoke("close-day", {
-    report_date: today(),
-    timezone: state.profile?.timezone || detectedTimezone(),
-  });
-  state.report = data.report;
-  state.streak = data.streak;
-  renderReport();
-  switchView("stats");
-  showAlert(`Day closed. See you tomorrow.${state.streak?.current_count ? ` ${state.streak.current_count}-day streak.` : ""}`);
 }
 
 function renderNudge(notification) {
@@ -1314,11 +1385,11 @@ function closeDayTally() {
 }
 
 function draftTitle(draft) {
-  return draft?.parsed_merchant || draft?.parsed_category || "Possible transaction";
+  return correctedDraftMerchant(draft) || correctedDraftCategory(draft) || "Possible transaction";
 }
 
 function draftSourceLabel(draft) {
-  if (draft?.parsed_necessity === "fixed" || draft?.source === "recurring") return "auto-filed bill";
+  if (correctedDraftNecessity(draft) === "fixed" || draft?.source === "recurring") return "auto-filed bill";
   if (draft?.source === "screenshot") return "receipt";
   if (draft?.source === "manual") return "typed";
   return draft?.source || "captured";
@@ -1334,9 +1405,10 @@ function progressDots() {
 
 function renderCloseDayStage() {
   if (!els.closeDayStage) return;
+  const reviewCount = state.pendingCount ?? state.drafts.length;
   if (els.reviewBadge) {
-    els.reviewBadge.textContent = String(state.pendingCount || state.drafts.length);
-    els.reviewBadge.classList.toggle("hidden", (state.pendingCount || state.drafts.length) === 0);
+    els.reviewBadge.textContent = String(reviewCount);
+    els.reviewBadge.classList.toggle("hidden", reviewCount === 0);
   }
 
   if (state.closeStage === "report" && state.report) {
@@ -1383,8 +1455,8 @@ function renderCloseCardStage() {
   const decision = state.closeDecisions[draft.id];
   const code = draft.parsed_currency || state.profile?.default_currency || "NPR";
   const amount = Number(decision?.amount ?? draft.parsed_amount ?? 0);
-  const category = decision?.category ?? draft.parsed_category ?? "Uncategorized";
-  const isFixed = draft.parsed_necessity === "fixed" || draft.source === "recurring";
+  const category = decision?.category ?? correctedDraftCategory(draft) ?? "Uncategorized";
+  const isFixed = correctedDraftNecessity(draft) === "fixed" || draft.source === "recurring";
   const tally = closeDayTally();
   els.closeDayStage.innerHTML = `
     <section class="close-flow">
@@ -1398,10 +1470,10 @@ function renderCloseCardStage() {
         <div class="inline-edit">
           <label>Amount<input id="cardAmountInput" type="number" min="0" step="0.01" value="${escapeAttr(amount || "")}"></label>
           <label>Category<select id="cardCategoryInput">
-            ${["Food", "Transport", "Bills", "Groceries", "Subscriptions", "Flexible", "Shopping", "Health", "Education", "Uncategorized"].map((item) => option(item, category)).join("")}
+            ${["Rent/Mortgage", "Food/Groceries", "Transport", "Utilities", "Bills", "Groceries", "Subscriptions", "Flexible", "Shopping", "Health", "Education", "Uncategorized"].map((item) => option(item, category)).join("")}
           </select></label>
         </div>
-        ${decision ? closeDecisionRevealHtml(decision, draft, code) : isFixed ? fixedDecisionButtonsHtml() : decisionButtonsHtml(draft)}
+        ${decision ? closeDecisionRevealHtml(decision, draft, code) : isFixed ? fixedDecisionButtonsHtml(draft) : decisionButtonsHtml(draft)}
         ${state.closeLastAction?.draftId === draft.id ? "<button id=\"undoCloseActionBtn\" class=\"ghost undo-btn\" type=\"button\"><i data-lucide=\"undo-2\"></i><span>Undo last tap</span></button>" : ""}
       </article>
     </section>
@@ -1428,10 +1500,11 @@ function decisionButtonsHtml(draft) {
   `;
 }
 
-function fixedDecisionButtonsHtml() {
+function fixedDecisionButtonsHtml(draft) {
+  const shouldTrackMonthly = Boolean((draft?.suggested_recurring || correctedDraftNecessity(draft) === "fixed") && isAutoFileBillsEnabled());
   return `
     <div class="decision-stack">
-      <button class="decision-btn" data-close-action="fixed" type="button"><i data-lucide="check"></i><span>Confirm</span></button>
+      <button class="decision-btn" data-close-action="fixed" data-create-recurring="${shouldTrackMonthly}" type="button"><i data-lucide="check"></i><span>Confirm</span></button>
     </div>
   `;
 }
@@ -1488,21 +1561,22 @@ async function handleCloseDecision(tag, createRecurring = false) {
   const draft = state.drafts[state.closeIndex];
   if (!draft || state.closeDecisions[draft.id]) return;
   const amount = Number($("#cardAmountInput")?.value || draft.parsed_amount || 0);
-  const category = $("#cardCategoryInput")?.value || draft.parsed_category || "Uncategorized";
+  const category = $("#cardCategoryInput")?.value || correctedDraftCategory(draft) || "Uncategorized";
   if (!amount || amount <= 0) throw new Error("Add a positive amount before closing this card.");
 
   const necessity = tag === "needed" ? "needed" : tag === "fixed" ? "fixed" : "flexible";
+  const shouldCreateRecurring = Boolean(createRecurring || (tag === "fixed" && (draft.suggested_recurring || correctedDraftNecessity(draft) === "fixed") && isAutoFileBillsEnabled()));
   const edits = {
     [draft.id]: {
       amount,
       currency: currency(draft.parsed_currency || state.profile?.default_currency || "NPR"),
-      merchant: draft.parsed_merchant || draft.parsed_category || "Transaction",
+      merchant: correctedDraftMerchant(draft) || correctedDraftCategory(draft) || "Transaction",
       category,
       kind: draft.parsed_kind || "expense",
       necessity,
       payment_method: draft.parsed_payment_method || "unknown",
       is_skipped_opportunity: tag === "skipped",
-      create_recurring: Boolean(createRecurring),
+      create_recurring: shouldCreateRecurring,
     },
   };
 
@@ -1518,7 +1592,7 @@ async function handleCloseDecision(tag, createRecurring = false) {
   };
   state.closeLastAction = { draftId: draft.id, transactionId: transaction?.id || null };
   state.pendingCount = Math.max(0, state.pendingCount - 1);
-  if (data.recurring_count > 0) await loadRecurringExpenses();
+  await refreshBackendSnapshot({ includeRecurring: shouldCreateRecurring || data.recurring_count > 0 });
   saveCloseProgress();
   renderCloseDayStage();
 }
@@ -1564,6 +1638,9 @@ async function finishCloseDay() {
   });
   state.report = data.report;
   state.streak = data.streak;
+  await refreshBackendSnapshot({ includeRecurring: true, includeReview: true });
+  state.report = data.report;
+  state.streak = data.streak;
   state.closeStage = "report";
   state.closeReportInsight = pickCloseInsight(data.report, data.streak);
   localStorage.removeItem(closeDayStorageKey());
@@ -1588,6 +1665,8 @@ function renderCloseReportStage() {
   const code = currency(report?.currency || state.profile?.default_currency || state.goal?.currency || "NPR");
   const spent = Number(report?.total_spent || 0);
   const protectedAmount = Number(report?.protected_amount || 0);
+  const totalLoggedAmount = Number(report?.total_logged_amount ?? (spent + protectedAmount));
+  const totalLogMessage = report?.total_log_message || `This is your total amount from the logs you have made today: ${code} ${Math.round(totalLoggedAmount).toLocaleString()}.`;
   const streakCount = state.streak?.current_count || 1;
   const goalPercent = state.goal?.target_amount ? pct((Number(state.goal.current_saved_amount || 0) + protectedAmount) / Number(state.goal.target_amount) * 100) : 0;
   els.closeDayStage.innerHTML = `
@@ -1605,7 +1684,7 @@ function renderCloseReportStage() {
           <div class="progress goal-pulse"><span style="width:${goalPercent}%"></span></div>
         </div>
       ` : ""}
-      <p class="insight-line">${escapeHtml(state.closeReportInsight || pickCloseInsight(report, state.streak))}</p>
+      <p class="insight-line">${escapeHtml(totalLogMessage)}</p>
       ${state.streak?.freezes_available === 0 ? "<small class=\"draft-meta\">We kept your streak. Everyone misses a day.</small>" : ""}
       <button id="seeTomorrowBtn" type="button"><span>See you tomorrow.</span><i data-lucide="sunrise"></i></button>
     </section>
@@ -1617,8 +1696,9 @@ function renderDrafts() {
   renderCloseDayStage();
   if (!els.draftList) return;
   if (els.reviewBadge) {
-    els.reviewBadge.textContent = String(state.pendingCount || state.drafts.length);
-    els.reviewBadge.classList.toggle("hidden", (state.pendingCount || state.drafts.length) === 0);
+    const reviewCount = state.pendingCount ?? state.drafts.length;
+    els.reviewBadge.textContent = String(reviewCount);
+    els.reviewBadge.classList.toggle("hidden", reviewCount === 0);
   }
   if (!state.drafts.length) {
     els.draftList.innerHTML = "<section class=\"panel empty-panel\"><p class=\"draft-meta\">Nothing to review yet, log something today and it'll wait for you here.</p></section>";
@@ -1628,9 +1708,9 @@ function renderDrafts() {
   els.draftList.innerHTML = state.drafts.map((draft) => {
     const amount = draft.parsed_amount ?? "";
     const code = draft.parsed_currency || state.profile?.default_currency || "NPR";
-    const title = draft.parsed_merchant || draft.parsed_category || "Possible transaction";
+    const title = correctedDraftMerchant(draft) || correctedDraftCategory(draft) || "Possible transaction";
     const confidence = Math.round(Number(draft.confidence || 0) * 100);
-    const showRecurringSuggestion = Boolean(draft.suggested_recurring && isAutoFileBillsEnabled());
+    const showRecurringSuggestion = Boolean((draft.suggested_recurring || correctedDraftNecessity(draft) === "fixed") && isAutoFileBillsEnabled());
     return `
       <article class="draft-card" data-card="${draft.id}">
         <div class="draft-main">
@@ -1646,7 +1726,7 @@ function renderDrafts() {
             amount,
             currency: code,
             kind: draft.parsed_kind,
-            necessity: draft.parsed_necessity,
+            necessity: correctedDraftNecessity(draft),
             skipped: false,
           })}
         </div>
@@ -1661,18 +1741,18 @@ function renderDrafts() {
         <div class="draft-edit">
           <input data-draft="${draft.id}" data-field="amount" value="${escapeAttr(amount)}" type="number" min="0.01" step="0.01" aria-label="Amount">
           <select data-draft="${draft.id}" data-field="currency" aria-label="Currency">${currencyOptionsHtml(code)}</select>
-          <input data-draft="${draft.id}" data-field="merchant" value="${escapeAttr(draft.parsed_merchant || "")}" aria-label="Merchant">
-          <input data-draft="${draft.id}" data-field="category" value="${escapeAttr(draft.parsed_category || "Uncategorized")}" aria-label="Category">
+          <input data-draft="${draft.id}" data-field="merchant" value="${escapeAttr(correctedDraftMerchant(draft) || "")}" aria-label="Merchant">
+          <input data-draft="${draft.id}" data-field="category" value="${escapeAttr(correctedDraftCategory(draft) || "Uncategorized")}" aria-label="Category">
           <select data-draft="${draft.id}" data-field="kind" aria-label="Kind">
             ${option("expense", draft.parsed_kind)}
             ${option("income", draft.parsed_kind)}
             ${option("transfer", draft.parsed_kind)}
           </select>
           <select data-draft="${draft.id}" data-field="necessity" aria-label="Necessity">
-            ${option("flexible", draft.parsed_necessity)}
-            ${option("needed", draft.parsed_necessity)}
-            ${option("fixed", draft.parsed_necessity)}
-            ${option("unknown", draft.parsed_necessity)}
+            ${option("flexible", correctedDraftNecessity(draft))}
+            ${option("needed", correctedDraftNecessity(draft))}
+            ${option("fixed", correctedDraftNecessity(draft))}
+            ${option("unknown", correctedDraftNecessity(draft))}
           </select>
           <select data-draft="${draft.id}" data-field="payment_method" aria-label="Payment method">
             ${option("wallet", draft.parsed_payment_method)}
@@ -1765,25 +1845,17 @@ function renderConfirmations() {
 }
 
 function renderReport() {
-  const report = state.report;
-  const code = currency(report?.currency || state.profile?.default_currency || state.goal?.currency || "NPR");
-  els.metricSpent.textContent = report ? money(report.total_spent, code) : "-";
-  els.metricFlexible.textContent = report ? money(report.flexible_spent, code) : "-";
-  els.metricProtected.textContent = report ? money(report.protected_amount, code) : "-";
-  els.metricStreak.textContent = state.streak ? `${state.streak.current_count} ${state.streak.current_count === 1 ? "day" : "days"}` : "-";
-  if (report) {
-    els.reportInsight.textContent = report.insight;
-    els.reportAchievement.textContent = report.achievement;
-  } else {
-    els.reportInsight.textContent = "Your report will appear after you close the day.";
-    els.reportAchievement.textContent = "";
-  }
+  // The old Stats-tab report widgets were removed in the Tab 4 rebuild.
+  // Closing a day now shows its report inside Tab 3 (renderCloseReportStage).
+  // Here we just refresh the Capture ring and mark the Stats tab for a reload.
   renderFinanceRings();
+  state.stats.dirty = true;
+  if (isStatsActive()) enterStats();
 }
 
 function renderFinanceRings() {
   const confirmedCount = state.lastConfirmations.length;
-  const pendingCount = state.pendingCount || state.drafts.length;
+  const pendingCount = state.pendingCount ?? state.drafts.length;
   const closedToday = Boolean(state.report?.report_date === today() || state.report?.date === today());
   const closePercent = closedToday ? 100 : confirmedCount + pendingCount > 0 ? pct((confirmedCount / (confirmedCount + pendingCount)) * 100) : 0;
   const goalPercentValue = state.goal?.target_amount ? pct((Number(state.goal.current_saved_amount || 0) / Number(state.goal.target_amount)) * 100) : 0;
@@ -1791,7 +1863,6 @@ function renderFinanceRings() {
 
   if (els.locationLine) els.locationLine.textContent = displayLocation();
   setAppleRing(els.captureRings, { budget: closePercent, expense: goalPercentValue, remaining: pacePercent });
-  setAppleRing(els.statsRings, { budget: closePercent, expense: goalPercentValue, remaining: pacePercent });
 
   if (els.ringCenterLabel && els.ringCenterValue && els.ringCenterHint) {
     if (pendingCount > 0) {
@@ -1812,9 +1883,6 @@ function renderFinanceRings() {
       els.ringCenterHint.textContent = "log today's first spend";
     }
   }
-  if (els.statsCenterValue) els.statsCenterValue.textContent = closedToday ? "closed" : "today";
-
-  renderStatsBreakdown();
 }
 
 function setAppleRing(element, values) {
@@ -1831,6 +1899,591 @@ function pulseRing() {
     els.captureRings.classList.add("pulse");
     window.setTimeout(() => els.captureRings?.classList.remove("pulse"), 700);
   });
+}
+
+/* ============================================================
+   STATS TAB (Tab 4) — analytics
+   Classic encodings, modern execution. All data comes from the
+   backend (daily_reports / streaks / transactions / goals) via the
+   user-scoped RLS client. The client only aggregates for charts and
+   computes the user's own median — it never recomputes streaks or
+   goal percentages, so Stats can never disagree with Tab 3.
+   ============================================================ */
+
+function statsCurrency() {
+  return currency(state.profile?.default_currency || state.goal?.currency || "NPR");
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function isStatsActive() {
+  return document.getElementById("view-stats")?.classList.contains("active") || false;
+}
+
+function statMedian(values) {
+  const nums = values.filter((v) => Number.isFinite(v)).slice().sort((a, b) => a - b);
+  if (!nums.length) return 0;
+  const mid = Math.floor(nums.length / 2);
+  return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+}
+
+function statZone() {
+  return state.profile?.timezone || detectedTimezone();
+}
+
+// YYYY-MM-DD for a Date in the user's timezone (en-CA formats as ISO date).
+function dateKeyInZone(date, tz = statZone()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function dowInZone(date, tz = statZone()) {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(date);
+  return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[name] ?? 0;
+}
+
+function addDaysDate(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function statTodayKey() {
+  return dateKeyInZone(new Date());
+}
+
+function statRangeStartKey(range = state.stats.range) {
+  const today = new Date();
+  if (range === "7d") return dateKeyInZone(addDaysDate(today, -6));
+  if (range === "month") return `${statTodayKey().slice(0, 7)}-01`;
+  return dateKeyInZone(addDaysDate(today, -29)); // 30d default
+}
+
+function prettyDate(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(date);
+}
+
+async function loadStatsData() {
+  const client = state.supabase;
+  if (!client || !state.session) {
+    state.stats.loaded = false;
+    return;
+  }
+  state.stats.loading = true;
+  try {
+    const reportsSince = dateKeyInZone(addDaysDate(new Date(), -110)); // 14 weeks + buffer
+    const txSince = addDaysDate(new Date(), -62).toISOString(); // widest chart range + buffer
+    const [streakRes, reportsRes, txRes] = await Promise.all([
+      client.from("streaks").select("*").maybeSingle(),
+      client.from("daily_reports").select("*").gte("report_date", reportsSince).order("report_date", { ascending: true }),
+      client
+        .from("transactions")
+        .select("amount,currency,category,necessity,occurred_at,is_skipped_opportunity,goal_percent,kind")
+        .eq("kind", "expense")
+        .gte("occurred_at", txSince)
+        .order("occurred_at", { ascending: true }),
+    ]);
+    if (streakRes.error) throw streakRes.error;
+    if (reportsRes.error) throw reportsRes.error;
+    if (txRes.error) throw txRes.error;
+    state.stats.streak = streakRes.data || state.streak || null;
+    state.stats.dailyReports = reportsRes.data || [];
+    state.stats.transactions = txRes.data || [];
+    state.stats.loaded = true;
+    state.stats.dirty = false;
+  } finally {
+    state.stats.loading = false;
+  }
+}
+
+async function enterStats() {
+  if (!isStatsActive()) return;
+  try {
+    if (state.supabase && state.session && (!state.stats.loaded || state.stats.dirty)) {
+      await loadStatsData();
+    }
+  } catch (error) {
+    showAlert(error.message || "Could not load stats.", "error");
+  }
+  renderStats();
+}
+
+function setStatsRange(range) {
+  state.stats.range = range;
+  $$("#statsRange .stat-range-btn").forEach((btn) => {
+    const active = btn.dataset.range === range;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", String(active));
+  });
+  // Only Sections 2 and 3 respond to the range control.
+  renderStatComposition();
+  renderStatTrend();
+}
+
+function destroyStatChart(key) {
+  if (state.stats.charts[key]) {
+    state.stats.charts[key].destroy();
+    delete state.stats.charts[key];
+  }
+}
+
+function renderStats() {
+  renderStatHero();
+  renderStatComposition();
+  renderStatTrend();
+  renderStatHeatmap();
+}
+
+/* --- Section 1: Am I protecting anything? --- */
+function renderStatHero() {
+  const code = statsCurrency();
+  const monthPrefix = statTodayKey().slice(0, 7);
+  const monthReports = state.stats.dailyReports.filter((r) => (r.report_date || "").startsWith(monthPrefix));
+  const protectedMonth = monthReports.reduce((sum, r) => sum + Number(r.protected_amount || 0), 0);
+  const spentMonth = monthReports.reduce((sum, r) => sum + Number(r.total_spent || 0), 0);
+  const flexMonth = monthReports.reduce((sum, r) => sum + Number(r.flexible_spent || 0), 0);
+  const daysClosed = monthReports.length;
+  const goalMovement = Math.max(0, Math.round(monthReports.reduce((sum, r) => sum + Number(r.goal_delta_percent || 0), 0)));
+
+  const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  setText("statProtected", money(protectedMonth, code));
+  setText("statSpentMonth", spentMonth > 0 ? money(spentMonth, code) : money(0, code));
+  setText("statFlexMonth", money(flexMonth, code));
+  setText("statDaysClosed", String(daysClosed));
+
+  const goal = state.goal;
+  const goalRow = document.getElementById("statGoalRow");
+  if (goal && goalRow) {
+    goalRow.classList.remove("hidden");
+    const goalPct = goal.target_amount ? pct((Number(goal.current_saved_amount || 0) / Number(goal.target_amount)) * 100) : 0;
+    const bar = document.getElementById("statGoalBar");
+    const thumb = document.getElementById("statGoalThumb");
+    setText("statGoalPct", `${Math.round(goalPct)}%`);
+    if (thumb) {
+      if (state.goalPhotoUrl) {
+        thumb.style.backgroundImage = `url("${state.goalPhotoUrl}")`;
+        thumb.textContent = "";
+      } else {
+        thumb.style.backgroundImage = "none";
+        thumb.textContent = (goal.name || "G").trim().charAt(0).toUpperCase();
+      }
+    }
+    if (bar) {
+      bar.style.width = "0%";
+      window.requestAnimationFrame(() => { bar.style.width = `${goalPct}%`; });
+    }
+  } else if (goalRow) {
+    goalRow.classList.add("hidden");
+  }
+
+  const sentence = document.getElementById("statProtectedSentence");
+  if (sentence) {
+    if (!goal) {
+      sentence.innerHTML = `Set a goal and every protected rupee starts adding up to something. <button id="statSetGoalBtn" class="link-btn" type="button">Set a goal</button>`;
+    } else if (protectedMonth <= 0) {
+      sentence.textContent = "Nothing protected yet — skip one thing tonight and it starts here.";
+    } else if (goalMovement > 0) {
+      sentence.textContent = `${goal.name} is ${goalMovement}% closer than at the start of the month.`;
+    } else {
+      sentence.textContent = `Every rupee you protect is nudging ${goal.name} closer.`;
+    }
+  }
+}
+
+/* --- Section 2: Where does it actually go? --- */
+function renderStatComposition() {
+  const code = statsCurrency();
+  const startKey = statRangeStartKey();
+  const rangeTx = state.stats.transactions.filter((t) => dateKeyInZone(new Date(t.occurred_at)) >= startKey);
+
+  const buckets = { fixed: 0, needed: 0, flexible: 0 };
+  const flexByCat = new Map();
+  const currencies = new Set();
+  for (const t of rangeTx) {
+    const amount = Number(t.amount || 0);
+    if (t.currency) currencies.add(currency(t.currency));
+    if (t.necessity === "fixed") buckets.fixed += amount;
+    else if (t.necessity === "needed") buckets.needed += amount;
+    else if (t.necessity === "flexible") {
+      buckets.flexible += amount;
+      const cat = t.category || "Other";
+      flexByCat.set(cat, (flexByCat.get(cat) || 0) + amount);
+    }
+  }
+  const total = buckets.fixed + buckets.needed + buckets.flexible;
+
+  const body = document.getElementById("statCompositionBody");
+  const flexWrap = document.getElementById("statFlexBarsWrap");
+  const empty = document.getElementById("statCompositionEmpty");
+  const sentence = document.getElementById("statCompositionSentence");
+  const note = document.getElementById("statCurrencyNote");
+
+  const mixedCurrency = currencies.size > 1 || (currencies.size === 1 && !currencies.has(code));
+  if (note) note.classList.toggle("hidden", !mixedCurrency);
+
+  if (total <= 0) {
+    destroyStatChart("doughnut");
+    destroyStatChart("flex");
+    if (body) body.classList.add("hidden");
+    if (flexWrap) flexWrap.classList.add("hidden");
+    if (empty) empty.classList.remove("hidden");
+    if (sentence) sentence.textContent = "Close a few days and your money starts telling you things.";
+    return;
+  }
+  if (body) body.classList.remove("hidden");
+  if (empty) empty.classList.add("hidden");
+
+  if (sentence) {
+    const committedPct = Math.round(((buckets.fixed + buckets.needed) / total) * 100);
+    if (buckets.flexible <= 0) {
+      sentence.textContent = "All of your spending this range is committed — no flexible spend yet.";
+    } else {
+      sentence.textContent = `${committedPct}% of your spending is fixed and needed. The ${money(buckets.flexible, code)} in flexible is where your goal lives.`;
+    }
+  }
+
+  const totalEl = document.getElementById("statDoughnutTotal");
+  if (totalEl) totalEl.textContent = compactMoney(total, code);
+
+  const rm = prefersReducedMotion();
+  const colors = { fixed: cssVar("--teal-600"), needed: cssVar("--teal-500"), flexible: cssVar("--mint-400") };
+
+  destroyStatChart("doughnut");
+  const doughnutCanvas = document.getElementById("statDoughnut");
+  if (doughnutCanvas && window.Chart) {
+    state.stats.charts.doughnut = new window.Chart(doughnutCanvas, {
+      type: "doughnut",
+      data: {
+        labels: ["Fixed", "Needed", "Flexible"],
+        datasets: [{ data: [buckets.fixed, buckets.needed, buckets.flexible], backgroundColor: [colors.fixed, colors.needed, colors.flexible], borderWidth: 0, hoverOffset: 6 }],
+      },
+      options: {
+        cutout: "68%",
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: rm ? false : { duration: 550, easing: "easeOutQuart" },
+        transitions: { active: { animation: { duration: 0 } } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (c) => ` ${c.label}: ${money(c.parsed, code)} (${Math.round((c.parsed / total) * 100)}%)` } },
+        },
+      },
+    });
+  }
+
+  // Custom HTML legend — label + amount + percentage in text, never colour alone.
+  const legend = document.getElementById("statDoughnutLegend");
+  if (legend) {
+    const rows = [
+      { label: "Fixed", value: buckets.fixed, color: colors.fixed },
+      { label: "Needed", value: buckets.needed, color: colors.needed },
+      { label: "Flexible", value: buckets.flexible, color: colors.flexible },
+    ];
+    legend.innerHTML = rows
+      .map((row) => `<li><span class="stat-legend-dot" style="background:${row.color}"></span><span class="stat-legend-label">${row.label}</span><span class="stat-legend-amt num">${money(row.value, code)}</span><span class="stat-legend-pct num">${Math.round((row.value / total) * 100)}%</span></li>`)
+      .join("");
+  }
+
+  // Flexible-only bar chart (the spending the user actually has agency over).
+  const flexRows = [...flexByCat.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 6);
+  destroyStatChart("flex");
+  if (flexRows.length && flexWrap) {
+    flexWrap.classList.remove("hidden");
+    const flexCanvasWrap = document.getElementById("statFlexBarsCanvas");
+    if (flexCanvasWrap) flexCanvasWrap.style.height = `${flexRows.length * 34 + 16}px`;
+    const flexCanvas = document.getElementById("statFlexBars");
+    if (flexCanvas && window.Chart) {
+      state.stats.charts.flex = new window.Chart(flexCanvas, {
+        type: "bar",
+        data: { labels: flexRows.map((r) => r.label), datasets: [{ data: flexRows.map((r) => r.value), backgroundColor: cssVar("--mint-400"), borderRadius: 5, borderSkipped: false, barThickness: 18 }] },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: rm ? false : { duration: 550, easing: "easeOutQuart" },
+          transitions: { active: { animation: { duration: 0 } } },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${money(c.parsed.x, code)}` } } },
+          scales: {
+            x: { beginAtZero: true, grid: { color: cssVar("--border-subtle"), drawBorder: false }, ticks: { color: cssVar("--text-muted"), font: { size: 12 }, callback: (v) => compactAmount(v) } },
+            y: { grid: { display: false, drawBorder: false }, ticks: { color: cssVar("--text-secondary"), font: { size: 12 } } },
+          },
+        },
+      });
+    }
+  } else if (flexWrap) {
+    flexWrap.classList.add("hidden");
+  }
+}
+
+/* --- Section 3: Am I getting better? --- */
+function renderStatTrend() {
+  const code = statsCurrency();
+  const reports = state.stats.dailyReports;
+  const body = document.getElementById("statTrendBody");
+  const empty = document.getElementById("statTrendEmpty");
+  const sentence = document.getElementById("statTrendSentence");
+
+  // Needs a week of history overall before a pattern is meaningful.
+  if (reports.length < 7) {
+    destroyStatChart("trend");
+    if (body) body.classList.add("hidden");
+    if (empty) empty.classList.remove("hidden");
+    if (sentence) sentence.textContent = "Give it a week — your pattern will show up here.";
+    return;
+  }
+  if (body) body.classList.remove("hidden");
+  if (empty) empty.classList.add("hidden");
+
+  const reportByDate = new Map(reports.map((r) => [r.report_date, r]));
+  const startKey = statRangeStartKey();
+  const todayKey = statTodayKey();
+
+  // Build one entry per calendar day in the range.
+  const days = [];
+  let cursor = new Date(`${startKey}T00:00:00Z`);
+  const end = new Date(`${todayKey}T00:00:00Z`);
+  while (dateKeyInZone(cursor, "UTC") <= dateKeyInZone(end, "UTC")) {
+    const key = dateKeyInZone(cursor, "UTC");
+    const report = reportByDate.get(key);
+    days.push({ key, closed: Boolean(report), value: report ? Number(report.flexible_spent || 0) : null });
+    cursor = addDaysDate(cursor, 1);
+  }
+
+  const closedValues = days.filter((d) => d.closed).map((d) => d.value);
+  const median = statMedian(closedValues);
+
+  // Sentence: compare the last 7 closed days against the user's own usual (median).
+  if (sentence) {
+    const recent = days.filter((d) => d.closed).slice(-7).map((d) => d.value);
+    const recentAvg = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : 0;
+    if (median > 0 && recent.length) {
+      const diff = Math.round(((recentAvg - median) / median) * 100);
+      if (diff <= -1) sentence.textContent = `Your flexible spending is trending down — ${Math.abs(diff)}% below your usual this week.`;
+      else if (diff >= 1) sentence.textContent = `Your flexible spending is running ${diff}% above your usual this week.`;
+      else sentence.textContent = "Your flexible spending is right around your usual this week.";
+    } else {
+      sentence.textContent = "Your flexible spending pattern is taking shape.";
+    }
+  }
+
+  const mint = cssVar("--mint-400");
+  const grey = "rgba(94, 115, 112, 0.4)"; // --text-muted @ 40%
+  const greyBorder = cssVar("--text-secondary");
+  const info = cssVar("--info");
+  const rm = prefersReducedMotion();
+
+  const colors = days.map((d) => (d.value > 0 ? (d.value <= median ? mint : grey) : "rgba(0,0,0,0)"));
+  const borderColors = days.map((d) => (d.value > 0 && d.value > median ? greyBorder : "rgba(0,0,0,0)"));
+  const borderWidths = days.map((d) => (d.value > 0 && d.value > median ? 1.5 : 0));
+
+  const step = state.stats.range === "7d" ? 1 : 5;
+
+  // Draws the "Your usual" median line, mint ticks for zero-spend closed days,
+  // and faint dotted baselines for days that were never closed.
+  const overlay = {
+    id: "trendOverlay",
+    afterDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea || !scales.x || !scales.y) return;
+      const x = scales.x;
+      const y = scales.y;
+      const barW = ((chartArea.right - chartArea.left) / days.length) * 0.55;
+      ctx.save();
+      days.forEach((d, i) => {
+        const cx = x.getPixelForValue(i);
+        if (d.closed && d.value === 0) {
+          ctx.fillStyle = mint;
+          ctx.fillRect(cx - barW / 2, chartArea.bottom - 3, barW, 3);
+        } else if (!d.closed) {
+          ctx.strokeStyle = "rgba(94, 115, 112, 0.35)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([2, 3]);
+          ctx.beginPath();
+          ctx.moveTo(cx - barW / 2, chartArea.bottom - 1);
+          ctx.lineTo(cx + barW / 2, chartArea.bottom - 1);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      });
+      if (median > 0) {
+        const yPos = y.getPixelForValue(median);
+        ctx.strokeStyle = info;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, yPos);
+        ctx.lineTo(chartArea.right, yPos);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = info;
+        ctx.font = "600 11px -apple-system, system-ui, sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "bottom";
+        ctx.fillText("Your usual", chartArea.left + 4, yPos - 3);
+      }
+      ctx.restore();
+    },
+  };
+
+  destroyStatChart("trend");
+  const canvas = document.getElementById("statTrend");
+  if (canvas && window.Chart) {
+    state.stats.charts.trend = new window.Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: days.map((d) => d.key),
+        datasets: [{ data: days.map((d) => d.value), backgroundColor: colors, borderColor: borderColors, borderWidth: { top: 0, right: 0, bottom: 0, left: 0 }, borderRadius: 3, maxBarThickness: 30 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: rm ? false : { duration: 550, easing: "easeOutQuart" },
+        transitions: { active: { animation: { duration: 0 } } },
+        layout: { padding: { top: 18 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            filter: (item) => item.raw != null,
+            callbacks: {
+              title: (items) => prettyDate(items[0].label),
+              label: (c) => (c.parsed.y === 0 ? " No-spend day — nice" : ` ${money(c.parsed.y, code)} flexible`),
+            },
+          },
+        },
+        scales: {
+          x: { grid: { display: false, drawBorder: false }, ticks: { color: cssVar("--text-muted"), font: { size: 11 }, maxRotation: 0, autoSkip: false, callback: (val, index) => (index % step === 0 ? prettyDate(days[index].key).replace(/^[A-Za-z]+, /, "") : "") } },
+          y: { beginAtZero: true, grid: { color: cssVar("--border-subtle"), drawBorder: false }, ticks: { color: cssVar("--text-muted"), font: { size: 12 }, callback: (v) => compactAmount(v) } },
+        },
+      },
+      plugins: [overlay],
+    });
+    // Per-bar top borders for above-usual days (non-colour signal).
+    const ds = state.stats.charts.trend.data.datasets[0];
+    ds.borderColor = borderColors;
+    ds.borderWidth = borderWidths.map((w) => ({ top: w, right: 0, bottom: 0, left: 0 }));
+    ds.borderSkipped = false;
+    state.stats.charts.trend.update(rm ? "none" : undefined);
+  }
+}
+
+/* --- Section 4: Am I showing up? --- */
+function renderStatHeatmap() {
+  const code = statsCurrency();
+  const reports = state.stats.dailyReports;
+  const reportByDate = new Map(reports.map((r) => [r.report_date, r]));
+  const streakCount = Number(state.stats.streak?.current_count || 0);
+
+  // Median protected across closed days that actually protected something.
+  const medProtected = statMedian(reports.map((r) => Number(r.protected_amount || 0)).filter((v) => v > 0));
+
+  const tz = statZone();
+  const today = new Date();
+  const todayKey = dateKeyInZone(today, tz);
+  const rawStart = addDaysDate(today, -(14 * 7 - 1)); // 98 days inclusive
+  const startDow = dowInZone(rawStart, tz);
+  let gridStart = addDaysDate(rawStart, -startDow); // back to Sunday
+
+  const weeks = [];
+  let cursor = gridStart;
+  for (let w = 0; w < 15; w += 1) {
+    const col = [];
+    for (let d = 0; d < 7; d += 1) {
+      const key = dateKeyInZone(cursor, tz);
+      const isFuture = key > todayKey;
+      col.push({ key, isFuture, date: new Date(cursor) });
+      cursor = addDaysDate(cursor, 1);
+    }
+    weeks.push(col);
+    if (dateKeyInZone(cursor, tz) > todayKey) break;
+  }
+
+  // Display-only grace inference: an isolated missed day bracketed by closed
+  // days reads as a kept/frozen day. This never touches the streak number
+  // (that stays the backend value), it only annotates the gap.
+  const isKeptGap = (key) => {
+    if (reportByDate.has(key) || key > todayKey) return false;
+    const [y, m, dd] = key.split("-").map(Number);
+    const base = new Date(Date.UTC(y, m - 1, dd));
+    const prev = dateKeyInZone(addDaysDate(base, -1), "UTC");
+    const next = dateKeyInZone(addDaysDate(base, 1), "UTC");
+    return reportByDate.has(prev) && reportByDate.has(next);
+  };
+
+  const cellClassAndTip = (cell) => {
+    if (cell.isFuture) return { cls: "heat-cell future", tip: "" };
+    const report = reportByDate.get(cell.key);
+    const label = prettyDate(cell.key);
+    if (!report) {
+      if (isKeptGap(cell.key)) return { cls: "heat-cell freeze", tip: `${label} — Streak kept — everyone misses a day.` };
+      return { cls: "heat-cell none", tip: `${label} — not closed` };
+    }
+    const protectedAmt = Number(report.protected_amount || 0);
+    if (protectedAmt <= 0) return { cls: "heat-cell l1", tip: `${label} — closed, nothing protected` };
+    if (medProtected > 0 && protectedAmt > medProtected) return { cls: "heat-cell l3", tip: `${label} — closed, ${money(protectedAmt, code)} protected (a strong day)` };
+    return { cls: "heat-cell l2", tip: `${label} — closed, ${money(protectedAmt, code)} protected` };
+  };
+
+  const weekdayLabels = ["", "Mon", "", "Wed", "", "Fri", ""];
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  let lastMonth = -1;
+  const monthCells = weeks
+    .map((col) => {
+      const firstReal = col.find((c) => !c.isFuture) || col[0];
+      const month = Number(firstReal.key.split("-")[1]) - 1;
+      const dayNum = Number(firstReal.key.split("-")[2]);
+      if (month !== lastMonth && dayNum <= 14) {
+        lastMonth = month;
+        return `<span class="heat-month">${monthNames[month]}</span>`;
+      }
+      return `<span class="heat-month"></span>`;
+    })
+    .join("");
+
+  const rm = prefersReducedMotion();
+  let cellIndex = 0;
+  const cellsHtml = weeks
+    .map((col) => col.map((cell) => {
+      const { cls, tip } = cellClassAndTip(cell);
+      const delay = rm ? 0 : Math.min(cellIndex * 4, 480);
+      cellIndex += 1;
+      const tipAttr = tip ? ` title="${escapeAttr(tip)}" aria-label="${escapeAttr(tip)}"` : ' aria-hidden="true"';
+      return `<div class="${cls}" style="animation-delay:${delay}ms"${tipAttr}></div>`;
+    }).join(""))
+    .join("");
+
+  const heatmap = document.getElementById("statHeatmap");
+  if (heatmap) {
+    const cols = weeks.length;
+    heatmap.innerHTML = `
+      <div class="heat-weekdays">${weekdayLabels.map((l) => `<span>${l}</span>`).join("")}</div>
+      <div class="heat-body">
+        <div class="heat-months" style="grid-template-columns:repeat(${cols}, var(--heat-cell))">${monthCells}</div>
+        <div class="heat-cells" style="grid-template-columns:repeat(${cols}, var(--heat-cell))">${cellsHtml}</div>
+      </div>`;
+  }
+
+  const last14 = [];
+  for (let i = 0; i < 14; i += 1) last14.push(dateKeyInZone(addDaysDate(today, -i), tz));
+  const closedIn14 = last14.filter((k) => reportByDate.has(k)).length;
+  const heatSentence = document.getElementById("statHeatSentence");
+  if (heatSentence) {
+    if (reports.length === 0) heatSentence.textContent = "Close your first day and your streak starts here.";
+    else heatSentence.textContent = `You've closed ${closedIn14} of the last 14 days.${streakCount > 0 ? ` Currently on a ${streakCount}-day streak.` : ""}`;
+  }
+
+  const streakLine = document.getElementById("statStreakLine");
+  if (streakLine) {
+    streakLine.innerHTML = streakCount > 0
+      ? `<strong class="num">${streakCount}</strong>-day streak`
+      : "Close a day to start a streak.";
+  }
 }
 
 function renderAll() {
@@ -1857,6 +2510,7 @@ function switchView(view) {
   };
   els.viewTitle.textContent = titles[view] ?? "Wallet Whisperer";
   if (view === "review") guard(enterCloseDay);
+  if (view === "stats") enterStats();
 }
 
 function switchMoneyTab(tab) {
@@ -1936,7 +2590,7 @@ function bindEvents() {
   $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   $$(".money-tab").forEach((button) => button.addEventListener("click", () => switchMoneyTab(button.dataset.moneyTab)));
   $("#sessionPill").addEventListener("click", () => {
-    if (!state.session) switchView("money");
+    if (!state.session) openMoneySettingsModal();
   });
   $("#captureRings").addEventListener("click", () => {
     if (state.pendingCount > 0) switchView("review");
@@ -1979,7 +2633,14 @@ function bindEvents() {
   });
   $("#nightlyBtn").addEventListener("click", () => guard(() => nightlyReview(true)));
   $("#nudgeReviewBtn").addEventListener("click", () => switchView("review"));
-  $("#closeDayBtn").addEventListener("click", () => guard(closeDay));
+  $("#statsRange")?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-range]");
+    if (!btn || btn.dataset.range === state.stats.range) return;
+    setStatsRange(btn.dataset.range);
+  });
+  $("#statProtectedSentence")?.addEventListener("click", (event) => {
+    if (event.target.closest("#statSetGoalBtn")) openGoalModal();
+  });
   $("#refreshBtn").addEventListener("click", () => guard(async () => {
     if (state.session) {
       await runStartupSync({ silent: true });

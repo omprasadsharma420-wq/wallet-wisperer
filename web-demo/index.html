@@ -7,6 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="./styles.css">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
   </head>
   <body>
     <main class="shell">
@@ -30,7 +31,7 @@
       <section class="workspace">
         <header class="topbar">
           <div>
-            <button id="sessionPill" class="status-pill" type="button"><span class="status-dot"></span><span id="sessionLabel">Demo mode</span></button>
+            <button id="sessionPill" class="status-pill" type="button"><span class="status-dot"></span><span id="sessionLabel">Sign in</span></button>
             <h2 id="viewTitle">Smart Capture</h2>
           </div>
           <div class="top-actions">
@@ -158,57 +159,91 @@
         </section>
 
         <section class="view" id="view-stats">
-          <div class="stats-hero">
-            <section class="apple-ring-panel compact-ring-panel">
-              <div id="statsRings" class="apple-rings small" aria-label="Stats rings">
-                <div class="apple-ring apple-ring-budget"></div>
-                <div class="apple-ring apple-ring-expense"></div>
-                <div class="apple-ring apple-ring-remaining"></div>
-                <div class="apple-ring-core">
-                  <span>Close</span>
-                  <strong id="statsCenterValue">today</strong>
-                </div>
+          <div class="stats-page">
+            <header class="stats-page-head">
+              <h1>Stats</h1>
+              <p>What your money has been doing.</p>
+            </header>
+
+            <!-- SECTION 1 — Am I protecting anything? -->
+            <section class="stat-section stat-hero" id="statSection1" aria-labelledby="statHeroLabel">
+              <span class="stat-hero-label" id="statHeroLabel">Protected this month</span>
+              <strong class="stat-hero-figure num" id="statProtected">NPR 0</strong>
+              <p class="stat-hero-sentence" id="statProtectedSentence">Nothing protected yet — skip one thing tonight and it starts here.</p>
+              <div class="stat-goal-row hidden" id="statGoalRow">
+                <div class="stat-goal-thumb" id="statGoalThumb" aria-hidden="true"></div>
+                <div class="stat-goal-bar"><span id="statGoalBar"></span></div>
+                <span class="stat-goal-pct num" id="statGoalPct">0%</span>
+              </div>
+              <div class="stat-hero-support">
+                <div><span class="num" id="statSpentMonth">—</span><label>Spent this month</label></div>
+                <div><span class="num" id="statFlexMonth">—</span><label>Flexible spend</label></div>
+                <div><span class="num" id="statDaysClosed">—</span><label>Days closed</label></div>
               </div>
             </section>
 
-            <section class="panel report-panel">
-              <div class="section-head">
-                <h3>Close Day</h3>
-                <button id="closeDayBtn"><i data-lucide="sunset"></i><span>Generate Report</span></button>
+            <!-- Range control governs Sections 2 & 3 only -->
+            <div class="stat-range-wrap">
+              <div class="stat-range" id="statsRange" role="tablist" aria-label="Time range for spending charts">
+                <button class="stat-range-btn" data-range="7d" role="tab" type="button">7 days</button>
+                <button class="stat-range-btn active" data-range="30d" role="tab" type="button" aria-selected="true">30 days</button>
+                <button class="stat-range-btn" data-range="month" role="tab" type="button">This month</button>
               </div>
-              <div class="report-copy">
-                <p id="reportInsight">Your report will appear after you close the day.</p>
-                <strong id="reportAchievement"></strong>
-              </div>
-            </section>
-          </div>
-
-          <div class="report-grid">
-            <section class="metric">
-              <span>Total spent</span>
-              <strong id="metricSpent">-</strong>
-            </section>
-            <section class="metric">
-              <span>Flexible</span>
-              <strong id="metricFlexible">-</strong>
-            </section>
-            <section class="metric">
-              <span>Protected</span>
-              <strong id="metricProtected">-</strong>
-            </section>
-            <section class="metric">
-              <span>Streak</span>
-              <strong id="metricStreak">-</strong>
-            </section>
-          </div>
-
-          <section class="panel stats-breakdown">
-            <div class="section-head">
-              <h3>Monthly Targets</h3>
-              <span class="pill" id="statsBudgetStatus">NPR 0 flexible so far</span>
             </div>
-            <div id="statsCategoryList" class="stats-category-list"></div>
-          </section>
+
+            <!-- SECTION 2 — Where does it actually go? -->
+            <section class="stat-section" id="statSection2" aria-labelledby="statCompHeading">
+              <h2 class="stat-section-q" id="statCompHeading">Where does it actually go?</h2>
+              <p class="stat-sentence" id="statCompositionSentence">Close a few days and your money starts telling you things.</p>
+              <div class="stat-composition" id="statCompositionBody">
+                <div class="stat-doughnut-wrap">
+                  <canvas id="statDoughnut" role="img" aria-label="Spending composition: fixed, needed, and flexible"></canvas>
+                  <div class="stat-doughnut-center">
+                    <strong class="num" id="statDoughnutTotal">—</strong>
+                    <small>spent</small>
+                  </div>
+                </div>
+                <ul class="stat-legend" id="statDoughnutLegend"></ul>
+              </div>
+              <div class="stat-flexbars" id="statFlexBarsWrap">
+                <div class="stat-flexbars-canvas" id="statFlexBarsCanvas"><canvas id="statFlexBars" role="img" aria-label="Flexible spending by category"></canvas></div>
+                <p class="stat-note">Fixed and needed spending isn't shown here — this is the part you can actually change.</p>
+              </div>
+              <p class="stat-footnote hidden" id="statCurrencyNote">Some amounts converted at today's rate.</p>
+              <div class="stat-empty hidden" id="statCompositionEmpty">
+                <div class="stat-empty-art" aria-hidden="true"><span></span><span></span><span></span></div>
+                <p>Close a few days and your money starts telling you things.</p>
+              </div>
+            </section>
+
+            <!-- SECTION 3 — Am I getting better? -->
+            <section class="stat-section" id="statSection3" aria-labelledby="statTrendHeading">
+              <h2 class="stat-section-q" id="statTrendHeading">Am I getting better?</h2>
+              <p class="stat-sentence" id="statTrendSentence">Give it a week — your pattern will show up here.</p>
+              <div class="stat-trend-body" id="statTrendBody">
+                <div class="stat-trend-canvas"><canvas id="statTrend" role="img" aria-label="Flexible spending per day"></canvas></div>
+                <p class="stat-note stat-trend-legend">
+                  <i class="stat-swatch mint" aria-hidden="true"></i>At or below your usual
+                  <i class="stat-swatch grey" aria-hidden="true"></i>Grey = above your usual
+                  <i class="stat-swatch line" aria-hidden="true"></i>Dashed line = your usual
+                </p>
+              </div>
+              <div class="stat-empty hidden" id="statTrendEmpty">
+                <div class="stat-empty-art bars" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+                <p>Give it a week — your pattern will show up here.</p>
+              </div>
+            </section>
+
+            <!-- SECTION 4 — Am I showing up? -->
+            <section class="stat-section" id="statSection4" aria-labelledby="statHeatHeading">
+              <h2 class="stat-section-q" id="statHeatHeading">Am I showing up?</h2>
+              <p class="stat-sentence" id="statHeatSentence">Close your first day and your streak starts here.</p>
+              <div class="stat-heatmap-scroll">
+                <div class="stat-heatmap" id="statHeatmap"></div>
+              </div>
+              <p class="stat-streak-line" id="statStreakLine"></p>
+            </section>
+          </div>
         </section>
       </section>
     </main>

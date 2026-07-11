@@ -1,6 +1,6 @@
 import { HttpError } from "./cors.ts";
 import { ParsedTransaction, parsedTransactionSchema, ReportSummary, reportSummarySchema } from "./models.ts";
-import { parseTransactionHeuristically } from "./heuristic-parser.ts";
+import { applyDeterministicCorrections, parseTransactionHeuristically } from "./heuristic-parser.ts";
 
 type StructuredCallOptions = {
   schemaName: string;
@@ -106,7 +106,10 @@ export async function parseTransactionWithAi(
       user: `Default currency: ${defaultCurrency}\nTransaction clue:\n${rawText}`,
     });
 
-    return { parsed: result.value, model: result.model };
+    return {
+      parsed: applyDeterministicCorrections(rawText, result.value, defaultCurrency),
+      model: result.model,
+    };
   } catch (error) {
     console.error("OpenAI parser failed; using heuristic fallback.", error);
     return {

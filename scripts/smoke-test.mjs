@@ -84,6 +84,13 @@ assert(read("web-demo/app.js").includes("visibilitychange"), "web demo refreshes
 assert(read("web-demo/index.html").includes("captureRings"), "web demo includes Apple-style rings UI");
 assert(read("web-demo/app.js").includes("CATEGORY_GROUPS"), "web demo includes category budget groups");
 assert(read("web-demo/styles.css").includes("conic-gradient"), "web demo renders ring visuals");
+assert(!read("web-demo/index.html").includes("Demo mode"), "production UI does not show Demo mode");
+assert(!read("web-demo/app.js").includes("Demo mode"), "session pill uses production sign-in state");
+assert(read("supabase/functions/_shared/heuristic-parser.ts").includes("applyDeterministicCorrections"), "parser applies deterministic finance corrections");
+assert(read("supabase/functions/_shared/heuristic-parser.ts").includes("Rent/Mortgage"), "parser normalizes rent into the recurring budget category");
+assert(read("web-demo/app.js").includes("deterministicDraftHint"), "frontend corrects weak parser categories before confirmation");
+assert(read("supabase/functions/close-day/index.ts").includes("total_logged_amount"), "close-day returns total logged amount");
+assert(read("supabase/functions/close-day/index.ts").includes("This is your total amount from the logs you have made today"), "close-day report includes total log message");
 assert(read("scripts/deployed-smoke-test.mjs").includes("Hosted smoke test passed"), "hosted smoke test script exists");
 assert(read("scripts/deploy-all.cmd").includes("db push"), "deploy-all pushes migrations");
 assert(read("scripts/serve-web-demo.mjs").includes("Wallet Whisperer demo"), "web demo server script exists");
