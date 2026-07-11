@@ -6,6 +6,7 @@
     <title>Wallet Whisperer</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="./styles.css">
+    <script src="./config.js"></script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
   </head>
@@ -31,10 +32,10 @@
       <section class="workspace">
         <header class="topbar">
           <div>
-            <button id="sessionPill" class="status-pill" type="button"><span class="status-dot"></span><span id="sessionLabel">Sign in</span></button>
             <h2 id="viewTitle">Smart Capture</h2>
           </div>
           <div class="top-actions">
+            <button id="sessionPill" class="status-pill" type="button"><span class="status-dot"></span><span id="sessionLabel">Sign in</span></button>
             <button id="refreshBtn" class="icon-button" title="Refresh"><i data-lucide="refresh-cw"></i></button>
             <button id="signOutBtn" class="ghost hidden">Sign out</button>
           </div>
@@ -274,16 +275,30 @@
         <label>Location<select id="profileTimezone"></select></label>
         <button id="saveProfileBtn" class="secondary"><i data-lucide="check"></i><span>Verify &amp; Save</span></button>
         <span id="profileSavedNote" class="region-note hidden"><i data-lucide="badge-check"></i><span>Verified</span></span>
-        <div class="modal-divider"></div>
-        <label>Supabase URL<input id="supabaseUrl" placeholder="https://lzbtttgggoxumbcjqqsu.supabase.co"></label>
-        <label>Anon key<input id="anonKey" placeholder="Paste anon public key"></label>
-        <label>Email<input id="email" type="email" placeholder="you@example.com"></label>
-        <label>Password<input id="password" type="password" placeholder="Minimum 6 characters"></label>
-        <div class="button-row">
-          <button id="saveConfigBtn" class="secondary"><i data-lucide="save"></i><span>Save</span></button>
-          <button id="signInBtn"><i data-lucide="log-in"></i><span>Sign in</span></button>
-          <button id="signUpBtn" class="secondary"><i data-lucide="user-plus"></i><span>Sign up</span></button>
+      </section>
+    </div>
+    <div id="authModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <section class="panel modal-panel auth-panel">
+        <div class="section-head">
+          <div>
+            <h3 id="authTitle">Sign in to Wallet Whisperer</h3>
+            <p id="authPrompt" class="soft-line">Save, sync, and close your day across devices.</p>
+          </div>
         </div>
+        <button id="googleSignInBtn" class="secondary" type="button"><i data-lucide="log-in"></i><span>Continue with Google</span></button>
+        <div class="modal-divider"></div>
+        <label>Name<input id="authName" type="text" autocomplete="name" placeholder="Your name"></label>
+        <label>Email<input id="email" type="email" autocomplete="email" placeholder="you@example.com"></label>
+        <label>Password<input id="password" type="password" autocomplete="current-password" placeholder="Minimum 6 characters"></label>
+        <div class="button-row">
+          <button id="signInBtn" type="button"><i data-lucide="log-in"></i><span>Sign in</span></button>
+          <button id="signUpBtn" class="secondary" type="button"><i data-lucide="user-plus"></i><span>Sign up</span></button>
+        </div>
+        <div class="button-row auth-secondary-actions">
+          <button id="resetPasswordBtn" class="ghost" type="button"><i data-lucide="key-round"></i><span>Forgot password</span></button>
+          <button id="continueGuestBtn" class="ghost" type="button"><i data-lucide="monitor"></i><span>Continue as guest</span></button>
+        </div>
+        <p class="hint">Guest mode is local-only. Sign in before saving money clues, goals, receipts, or reports.</p>
       </section>
     </div>
     <div id="expenseModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="expenseModalTitle">

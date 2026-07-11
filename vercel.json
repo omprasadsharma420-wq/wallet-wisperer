@@ -1,5 +1,5 @@
 {
-  "buildCommand": null,
-  "outputDirectory": "web-demo",
+  "buildCommand": "node scripts/build-web.mjs",
+  "outputDirectory": "dist",
   "cleanUrls": true
 }

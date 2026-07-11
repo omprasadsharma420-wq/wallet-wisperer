@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node scripts/build-web.mjs",
     "demo": "node scripts/serve-web-demo.mjs",
     "smoke": "node scripts/smoke-test.mjs",
     "smoke:deployed": "node scripts/deployed-smoke-test.mjs"

@@ -1,10 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const DEFAULT_URL = "https://lzbtttgggoxumbcjqqsu.supabase.co";
-const DEFAULT_PUBLIC_KEY = "sb_publishable_v5pAWpqrnyLyEMlNeaZPAg_4xah6LqS";
+const RUNTIME_CONFIG = globalThis.WALLET_WHISPERER_CONFIG || {};
+const DEFAULT_URL = RUNTIME_CONFIG.supabaseUrl || "https://lzbtttgggoxumbcjqqsu.supabase.co";
+const DEFAULT_PUBLIC_KEY = RUNTIME_CONFIG.supabaseAnonKey || "sb_publishable_v5pAWpqrnyLyEMlNeaZPAg_4xah6LqS";
 const CATEGORY_STORAGE_KEY = "ww_category_targets";
 const AUTOFILE_STORAGE_KEY = "ww_autofile_bills";
 const CLOSE_DAY_STORAGE_PREFIX = "ww_close_day_";
+const GUEST_MODE_STORAGE_KEY = "ww_guest_mode";
 const PLACEHOLDER_EXAMPLES = ["250 momo", "rent 4000", "skipped coffee 150", "paste your bank SMS here"];
 
 const CURRENCIES = [
@@ -168,6 +170,7 @@ const state = {
   closeReportInsight: "",
   captureAttachment: null,
   selectedPaymentMethod: null,
+  guestMode: localStorage.getItem(GUEST_MODE_STORAGE_KEY) === "true",
   goalPhotoFile: null,
   goalPhotoUrl: null,
   stats: {
@@ -235,33 +238,24 @@ function showAlert(message, tone = "info") {
 
 function configFromStorage() {
   return {
-    url: localStorage.getItem("ww_supabase_url") || DEFAULT_URL,
-    anon: localStorage.getItem("ww_supabase_anon") || DEFAULT_PUBLIC_KEY,
+    url: DEFAULT_URL,
+    anon: DEFAULT_PUBLIC_KEY,
   };
-}
-
-function saveConfig() {
-  localStorage.setItem("ww_supabase_url", $("#supabaseUrl").value.trim());
-  localStorage.setItem("ww_supabase_anon", $("#anonKey").value.trim());
-  initClient();
-  showAlert("Connection saved.");
 }
 
 function initClient() {
   const config = configFromStorage();
-  $("#supabaseUrl").value = config.url;
-  $("#anonKey").value = config.anon;
   state.supabase = config.url && config.anon ? createClient(config.url, config.anon) : null;
 }
 
 function requireClient() {
-  if (!state.supabase) throw new Error("Save Supabase URL and public key first.");
+  if (!state.supabase) throw new Error("App configuration is missing. Please check the deployment settings.");
   return state.supabase;
 }
 
 function requireSession() {
   if (state.session?.user?.id) return state.session;
-  openMoneySettingsModal();
+  openAuthModal("Sign in to save and sync your finance data.");
   throw new Error("Sign in to save and sync your finance data.");
 }
 
@@ -582,6 +576,7 @@ async function loadSession() {
   if (!state.supabase) {
     renderSession();
     renderFinanceRings();
+    openAuthModal("App configuration is missing. Deployment needs Supabase public config.");
     return;
   }
 
@@ -590,40 +585,122 @@ async function loadSession() {
   renderSession();
 
   if (state.session) await runStartupSync({ silent: true });
-  else renderFinanceRings();
+  else {
+    renderFinanceRings();
+    if (!state.guestMode) openAuthModal();
+  }
 }
 
 function renderSession() {
   const email = state.session?.user?.email;
-  els.sessionLabel.textContent = email ? email.replace(/(.{18}).+(@.*)/, "$1...$2") : "Sign in";
+  els.sessionLabel.textContent = email ? email.replace(/(.{18}).+(@.*)/, "$1...$2") : state.guestMode ? "Guest" : "Sign in";
   els.sessionPill?.classList.toggle("connected", Boolean(email));
+  els.sessionPill?.classList.toggle("guest", !email && state.guestMode);
   $("#signOutBtn").classList.toggle("hidden", !email);
+}
+
+function openAuthModal(message = "Save, sync, and close your day across devices.") {
+  const prompt = $("#authPrompt");
+  if (prompt) prompt.textContent = message;
+  $("#authModal")?.classList.remove("hidden");
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function closeAuthModal() {
+  $("#authModal")?.classList.add("hidden");
+}
+
+function setAuthLoading(loading) {
+  ["signInBtn", "signUpBtn", "googleSignInBtn", "resetPasswordBtn", "continueGuestBtn"].forEach((id) => {
+    const button = document.getElementById(id);
+    if (button) button.disabled = loading;
+  });
 }
 
 async function signIn() {
   const email = $("#email").value.trim();
   const password = $("#password").value;
-  const { data, error } = await requireClient().auth.signInWithPassword({ email, password });
-  if (error) throw error;
-  state.session = data.session;
-  renderSession();
-  await runStartupSync({ silent: false });
-  showAlert("Signed in.");
+  if (!email || !password) throw new Error("Email and password are required.");
+  setAuthLoading(true);
+  try {
+    const { data, error } = await requireClient().auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    state.session = data.session;
+    state.guestMode = false;
+    localStorage.removeItem(GUEST_MODE_STORAGE_KEY);
+    renderSession();
+    closeAuthModal();
+    await runStartupSync({ silent: false });
+    showAlert("Signed in.");
+  } finally {
+    setAuthLoading(false);
+  }
 }
 
 async function signUp() {
   const email = $("#email").value.trim();
   const password = $("#password").value;
-  const { data, error } = await requireClient().auth.signUp({
-    email,
-    password,
-    options: { data: { display_name: email.split("@")[0] } },
-  });
-  if (error) throw error;
-  state.session = data.session;
+  const displayName = $("#authName")?.value.trim() || email.split("@")[0];
+  if (!email || !password) throw new Error("Email and password are required.");
+  setAuthLoading(true);
+  try {
+    const { data, error } = await requireClient().auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: window.location.origin,
+        data: { display_name: displayName },
+      },
+    });
+    if (error) throw error;
+    state.session = data.session;
+    state.guestMode = false;
+    localStorage.removeItem(GUEST_MODE_STORAGE_KEY);
+    renderSession();
+    showAlert(data.session ? "Account created." : "Check your email to verify your account, then sign in.");
+    if (data.session) {
+      closeAuthModal();
+      await runStartupSync({ silent: false });
+    }
+  } finally {
+    setAuthLoading(false);
+  }
+}
+
+async function signInWithGoogle() {
+  setAuthLoading(true);
+  try {
+    const { error } = await requireClient().auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (error) throw error;
+  } finally {
+    setAuthLoading(false);
+  }
+}
+
+async function resetPassword() {
+  const email = $("#email").value.trim();
+  if (!email) throw new Error("Add your email first.");
+  setAuthLoading(true);
+  try {
+    const { error } = await requireClient().auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) throw error;
+    showAlert("Password reset email sent.");
+  } finally {
+    setAuthLoading(false);
+  }
+}
+
+function continueAsGuest() {
+  state.guestMode = true;
+  localStorage.setItem(GUEST_MODE_STORAGE_KEY, "true");
+  closeAuthModal();
   renderSession();
-  showAlert(data.session ? "Account created." : "Check email confirmation, then sign in.");
-  if (data.session) await runStartupSync({ silent: false });
+  showAlert("Guest mode is local-only. Sign in before saving or syncing finance data.");
 }
 
 async function signOut() {
@@ -657,7 +734,10 @@ async function signOut() {
       charts: {},
     },
   });
+  state.guestMode = false;
+  localStorage.removeItem(GUEST_MODE_STORAGE_KEY);
   renderAll();
+  openAuthModal("Signed out. Sign in again or continue as guest.");
 }
 
 async function runStartupSync({ silent }) {
@@ -710,8 +790,7 @@ function refreshCurrencyDefaults() {
 }
 
 async function saveProfileCurrency() {
-  const userId = state.session?.user?.id;
-  if (!userId) throw new Error("Sign in first.");
+  const userId = requireSession().user.id;
   const code = currency($("#profileCurrency").value || "NPR");
   const timezone = $("#profileTimezone").value || detectedTimezone();
   const { error } = await requireClient().from("profiles").update({ default_currency: code, timezone }).eq("id", userId);
@@ -820,8 +899,7 @@ async function refreshBackendSnapshot({ includeRecurring = false, includeReview 
 }
 
 async function saveGoal() {
-  const userId = state.session?.user?.id;
-  if (!userId) throw new Error("Sign in first.");
+  const userId = requireSession().user.id;
 
   const name = ($("#modalGoalName")?.value || $("#goalName")?.value || "").trim();
   const amount = Number($("#modalGoalAmount")?.value || $("#goalAmount")?.value || 0);
@@ -852,8 +930,7 @@ async function saveGoal() {
 }
 
 async function saveIncomeSource() {
-  const userId = state.session?.user?.id;
-  if (!userId) throw new Error("Sign in first.");
+  const userId = requireSession().user.id;
   const editingId = $("#incomeModal")?.dataset.editingId || "";
   const label = $("#incomeLabel").value.trim();
   const amount = Number($("#incomeAmount").value);
@@ -879,8 +956,7 @@ async function saveIncomeSource() {
 }
 
 async function saveRecurringExpense() {
-  const userId = state.session?.user?.id;
-  if (!userId) throw new Error("Sign in first.");
+  const userId = requireSession().user.id;
   const groupId = $("#expenseGroupInput").value || "subscriptions";
   const group = groupSpec(groupId);
   const editingId = $("#expenseModal")?.dataset.editingId || "";
@@ -912,8 +988,7 @@ async function saveRecurringExpense() {
 }
 
 async function saveExpenseAmount(rowKey, amount) {
-  const userId = state.session?.user?.id;
-  if (!userId) throw new Error("Sign in first.");
+  const userId = requireSession().user.id;
   const normalizedAmount = Math.max(0, Number(amount) || 0);
   const groups = buildExpenseGroups();
   const row = groups.flatMap((group) => group.rows).find((item) => expenseRowKey(item) === rowKey);
@@ -1209,8 +1284,7 @@ function setCaptureAttachment(file) {
 }
 
 async function uploadCaptureAttachment(file) {
-  const userId = state.session?.user?.id;
-  if (!userId) throw new Error("Sign in first.");
+  const userId = requireSession().user.id;
   const extension = (file.name.split(".").pop() || "jpg").toLowerCase();
   const path = `${userId}/${Date.now()}.${extension}`;
   const { error } = await requireClient().storage
@@ -2545,7 +2619,11 @@ async function guard(action) {
     if (window.lucide) window.lucide.createIcons();
   } catch (error) {
     const message = error.message || "";
-    const friendly = /fetch|network|failed|functions|auth|jwt|supabase/i.test(message)
+    if (/sign in|password|email|credential|oauth|provider|verification|verify/i.test(message)) {
+      showAlert(message, "error");
+      return;
+    }
+    const friendly = /fetch|network|failed|functions|jwt|supabase/i.test(message)
       ? "Can't reach your data right now. Your text is safe here, try again in a moment."
       : message || "Something needs attention. Please check the highlighted fields and try again.";
     showAlert(friendly, "error");
@@ -2590,7 +2668,7 @@ function bindEvents() {
   $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   $$(".money-tab").forEach((button) => button.addEventListener("click", () => switchMoneyTab(button.dataset.moneyTab)));
   $("#sessionPill").addEventListener("click", () => {
-    if (!state.session) openMoneySettingsModal();
+    if (!state.session) openAuthModal();
   });
   $("#captureRings").addEventListener("click", () => {
     if (state.pendingCount > 0) switchView("review");
@@ -2601,9 +2679,11 @@ function bindEvents() {
       switchView("review");
     }
   });
-  $("#saveConfigBtn").addEventListener("click", () => guard(saveConfig));
   $("#signInBtn").addEventListener("click", () => guard(signIn));
   $("#signUpBtn").addEventListener("click", () => guard(signUp));
+  $("#googleSignInBtn").addEventListener("click", () => guard(signInWithGoogle));
+  $("#resetPasswordBtn").addEventListener("click", () => guard(resetPassword));
+  $("#continueGuestBtn").addEventListener("click", continueAsGuest);
   $("#signOutBtn").addEventListener("click", () => guard(signOut));
   $("#saveGoalBtn")?.addEventListener("click", () => guard(saveGoal));
   $("#modalSaveGoalBtn").addEventListener("click", () => guard(saveGoal));

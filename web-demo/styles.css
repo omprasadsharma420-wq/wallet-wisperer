@@ -410,6 +410,10 @@ label {
   box-shadow: 0 0 18px rgba(2, 195, 154, 0.48);
 }
 
+.status-pill.guest .status-dot {
+  background: var(--caution);
+}
+
 .button-row.compact {
   justify-content: flex-end;
 }
@@ -1844,6 +1848,15 @@ label {
   max-height: min(780px, 92vh);
   overflow: auto;
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+}
+
+.auth-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-secondary-actions {
+  justify-content: space-between;
 }
 
 .modal-divider {

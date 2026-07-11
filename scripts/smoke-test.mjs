@@ -84,7 +84,15 @@ assert(read("web-demo/app.js").includes("visibilitychange"), "web demo refreshes
 assert(read("web-demo/index.html").includes("captureRings"), "web demo includes Apple-style rings UI");
 assert(read("web-demo/app.js").includes("CATEGORY_GROUPS"), "web demo includes category budget groups");
 assert(read("web-demo/styles.css").includes("conic-gradient"), "web demo renders ring visuals");
-assert(read("vercel.json").includes("\"outputDirectory\": \"web-demo\""), "Vercel serves web-demo as the production root");
+assert(read("vercel.json").includes("\"outputDirectory\": \"dist\""), "Vercel serves the generated production build");
+assert(read("package.json").includes("\"build\""), "web build script is available");
+assert(read("scripts/build-web.mjs").includes("WALLET_WHISPERER_CONFIG"), "build injects frontend Supabase config");
+assert(read("web-demo/index.html").includes("authModal"), "dedicated auth screen exists");
+assert(read("web-demo/index.html").includes("Continue as guest"), "explicit guest mode is available");
+assert(read("web-demo/index.html").includes("Continue with Google"), "Google OAuth entry point exists");
+assert(read("web-demo/index.html").includes("Forgot password"), "password reset entry point exists");
+assert(!read("web-demo/index.html").includes("Supabase URL"), "backend URL field is not exposed in the UI");
+assert(!read("web-demo/index.html").includes("Anon key"), "backend anon key field is not exposed in the UI");
 assert(!read("web-demo/index.html").includes("Demo mode"), "production UI does not show Demo mode");
 assert(!read("web-demo/app.js").includes("Demo mode"), "session pill uses production sign-in state");
 assert(read("supabase/functions/_shared/heuristic-parser.ts").includes("applyDeterministicCorrections"), "parser applies deterministic finance corrections");
