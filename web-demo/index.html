@@ -109,23 +109,24 @@
         </section>
 
         <section class="view" id="view-money">
-          <div class="money-hero">
+          <div class="money-header">
             <div>
-              <p class="eyebrow" id="budgetMonth">Jul 2026</p>
-              <h3>Expense and Income</h3>
+              <h1>Your month</h1>
+              <p>Set what repeats. Log the rest as it happens.</p>
             </div>
-            <div class="assignment-card">
-              <span>Monthly income</span>
-              <strong id="incomeTotalValue">NPR 0</strong>
-              <small id="assignedLine">NPR 0 assigned</small>
-            </div>
+            <button id="moneySettingsPill" class="settings-pill" type="button"><span id="moneySettingsText">NPR · Local</span><i data-lucide="settings"></i></button>
           </div>
 
-          <section class="panel region-bar">
-            <label>Currency<select id="profileCurrency"></select></label>
-            <label>Location<select id="profileTimezone"></select></label>
-            <button id="saveProfileBtn" class="secondary"><i data-lucide="check"></i><span>Verify &amp; Save</span></button>
-            <span id="profileSavedNote" class="region-note hidden"><i data-lucide="badge-check"></i><span>Verified</span></span>
+          <section class="commitment-hero" id="commitmentHero">
+            <div class="commitment-meter" id="commitmentMeter" aria-label="Committed monthly income">
+              <div class="commitment-fill" id="commitmentFill"></div>
+              <i class="commitment-overflow hidden" id="commitmentOverflow"></i>
+              <div class="commitment-copy">
+                <strong id="commitmentText">NPR 0 of NPR 0 committed</strong>
+                <span id="commitmentSubline">Add an income source to see how your month is shaped.</span>
+              </div>
+            </div>
+            <button id="addIncomeInlineBtn" class="ghost hidden" type="button"><i data-lucide="plus"></i><span>Add income</span></button>
           </section>
 
           <div class="money-tabs" role="tablist" aria-label="Expenses or income">
@@ -134,103 +135,22 @@
           </div>
 
           <div class="money-panel active" id="money-expenses" role="tabpanel">
-            <div class="budget-builder">
-              <section class="panel category-panel">
-                <div class="section-head">
-                  <h3>Categories</h3>
-                  <span class="pill">Targets</span>
-                </div>
-                <div id="categoryGroups" class="category-groups"></div>
-              </section>
-
-              <aside class="panel target-panel">
-                <div class="section-head">
-                  <h3 id="targetTitle">Phone & Internet</h3>
-                  <span id="targetGroup" class="pill">Bills</span>
-                </div>
-                <div class="target-focus">
-                  <span id="targetIcon" class="target-icon">P</span>
-                  <strong id="targetAmountValue">NPR 0</strong>
-                  <small id="targetHint">Monthly target</small>
-                </div>
-                <label class="slider-label">
-                  Amount
-                  <input id="targetSlider" type="range" min="0" max="1000" step="1">
-                </label>
-                <div class="target-stats">
-                  <div><span>Monthly amount</span><strong id="targetSpentValue">NPR 0</strong></div>
-                  <div><span>Filed bills</span><strong id="targetRemainingValue">NPR 0</strong></div>
-                </div>
-                <div class="progress target-progress"><span id="targetProgressBar"></span></div>
-              </aside>
-            </div>
-
-            <section class="panel">
-              <div class="section-head">
-                <h3>Fixed Expenses</h3>
-                <span class="pill">Recurring</span>
-              </div>
-              <div class="form-grid">
-                <label>Label<input id="recurringLabel" placeholder="Rent"></label>
-                <label>Amount<input id="recurringAmount" type="number" min="0.01" step="0.01" placeholder="18000"></label>
-                <label>Currency<select id="recurringCurrency"></select></label>
-                <label>Category<input id="recurringCategory" placeholder="Bills"></label>
-                <label>Method<select id="recurringMethod"><option>bank_transfer</option><option>wallet</option><option>card</option><option>cash</option><option>unknown</option></select></label>
-                <label>Cadence<select id="recurringCadence"><option>monthly</option><option>weekly</option><option>biweekly</option><option>yearly</option><option>daily</option></select></label>
-                <label>Due day<input id="recurringDueDay" type="number" min="1" max="31" placeholder="1"></label>
-                <label>Next due<input id="recurringNextDue" type="date"></label>
-              </div>
-              <button id="saveRecurringBtn" class="secondary"><i data-lucide="calendar-plus"></i><span>Add Fixed Expense</span></button>
-              <div id="recurringList" class="mini-list"></div>
-            </section>
+            <div id="categoryGroups" class="expense-groups"></div>
           </div>
 
           <div class="money-panel" id="money-income" role="tabpanel">
-            <section class="panel">
+            <section class="panel income-panel">
               <div class="section-head">
-                <h3>Income Sources</h3>
-                <span class="pill">Multiple</span>
+                <div>
+                  <h3>Income sources</h3>
+                  <p class="soft-line">Total this month: <strong id="incomeTotalValue">NPR 0</strong></p>
+                </div>
+                <button id="addIncomeBtn" type="button"><i data-lucide="plus"></i><span>Add income source</span></button>
               </div>
-              <div class="form-grid">
-                <label>Label<input id="incomeLabel" placeholder="Salary"></label>
-                <label>Amount<input id="incomeAmount" type="number" min="0" step="0.01" placeholder="45000"></label>
-                <label>Currency<select id="incomeCurrency"></select></label>
-                <label>Cadence<select id="incomeCadence"><option>monthly</option><option>weekly</option><option>biweekly</option><option>yearly</option></select></label>
-              </div>
-              <button id="saveIncomeBtn" class="secondary"><i data-lucide="wallet-cards"></i><span>Add Income</span></button>
-              <div id="incomeList" class="mini-list"></div>
+              <div id="incomeList" class="income-list"></div>
             </section>
           </div>
 
-          <div class="layout-two settings-row">
-            <section class="panel">
-              <div class="section-head">
-                <h3>Active Goal</h3>
-                <span class="pill">One Rival</span>
-              </div>
-              <label>Goal name<input id="goalName" placeholder="Pokhara Trip"></label>
-              <label>Target amount<input id="goalAmount" type="number" min="1" placeholder="25000"></label>
-              <label>Currency<select id="goalCurrency"></select></label>
-              <input id="goalPhotoPath" type="hidden">
-              <button id="saveGoalBtn"><i data-lucide="target"></i><span>Save Goal</span></button>
-            </section>
-
-            <section class="panel">
-              <div class="section-head">
-                <h3>Connection</h3>
-                <span class="pill">Browser only</span>
-              </div>
-              <label>Supabase URL<input id="supabaseUrl" placeholder="https://lzbtttgggoxumbcjqqsu.supabase.co"></label>
-              <label>Anon key<input id="anonKey" placeholder="Paste anon public key"></label>
-              <label>Email<input id="email" type="email" placeholder="you@example.com"></label>
-              <label>Password<input id="password" type="password" placeholder="Minimum 6 characters"></label>
-              <div class="button-row">
-                <button id="saveConfigBtn" class="secondary"><i data-lucide="save"></i><span>Save</span></button>
-                <button id="signInBtn"><i data-lucide="log-in"></i><span>Sign in</span></button>
-                <button id="signUpBtn" class="secondary"><i data-lucide="user-plus"></i><span>Sign up</span></button>
-              </div>
-            </section>
-          </div>
         </section>
 
         <section class="view" id="view-review">
@@ -323,6 +243,55 @@
           <span id="modalGoalPhotoName" class="attach-name hidden"></span>
         </div>
         <button id="modalSaveGoalBtn" type="button"><i data-lucide="target"></i><span>Protect it</span></button>
+      </section>
+    </div>
+    <div id="moneySettingsModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="moneySettingsTitle">
+      <section class="panel modal-panel">
+        <div class="section-head">
+          <h3 id="moneySettingsTitle">Month settings</h3>
+          <button id="closeMoneySettingsBtn" class="ghost icon-button" type="button" aria-label="Close month settings"><i data-lucide="x"></i></button>
+        </div>
+        <label>Currency<select id="profileCurrency"></select></label>
+        <label>Location<select id="profileTimezone"></select></label>
+        <button id="saveProfileBtn" class="secondary"><i data-lucide="check"></i><span>Verify &amp; Save</span></button>
+        <span id="profileSavedNote" class="region-note hidden"><i data-lucide="badge-check"></i><span>Verified</span></span>
+        <div class="modal-divider"></div>
+        <label>Supabase URL<input id="supabaseUrl" placeholder="https://lzbtttgggoxumbcjqqsu.supabase.co"></label>
+        <label>Anon key<input id="anonKey" placeholder="Paste anon public key"></label>
+        <label>Email<input id="email" type="email" placeholder="you@example.com"></label>
+        <label>Password<input id="password" type="password" placeholder="Minimum 6 characters"></label>
+        <div class="button-row">
+          <button id="saveConfigBtn" class="secondary"><i data-lucide="save"></i><span>Save</span></button>
+          <button id="signInBtn"><i data-lucide="log-in"></i><span>Sign in</span></button>
+          <button id="signUpBtn" class="secondary"><i data-lucide="user-plus"></i><span>Sign up</span></button>
+        </div>
+      </section>
+    </div>
+    <div id="expenseModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="expenseModalTitle">
+      <section class="panel modal-panel">
+        <div class="section-head">
+          <h3 id="expenseModalTitle">Add monthly item</h3>
+          <button id="closeExpenseModalBtn" class="ghost icon-button" type="button" aria-label="Close expense form"><i data-lucide="x"></i></button>
+        </div>
+        <input id="expenseGroupInput" type="hidden">
+        <label>Name<input id="recurringLabel" placeholder="Netflix"></label>
+        <label>Monthly amount<input id="recurringAmount" type="number" min="0.01" step="0.01" placeholder="1200"></label>
+        <label>Currency<select id="recurringCurrency"></select></label>
+        <label>Method<select id="recurringMethod"><option>bank_transfer</option><option>wallet</option><option>card</option><option>cash</option><option>unknown</option></select></label>
+        <button id="saveRecurringBtn" type="button"><i data-lucide="calendar-plus"></i><span>Add monthly item</span></button>
+      </section>
+    </div>
+    <div id="incomeModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="incomeModalTitle">
+      <section class="panel modal-panel">
+        <div class="section-head">
+          <h3 id="incomeModalTitle">Add income source</h3>
+          <button id="closeIncomeModalBtn" class="ghost icon-button" type="button" aria-label="Close income form"><i data-lucide="x"></i></button>
+        </div>
+        <label>Name<input id="incomeLabel" placeholder="Salary"></label>
+        <label>Amount<input id="incomeAmount" type="number" min="0" step="0.01" placeholder="45000"></label>
+        <label>Currency<select id="incomeCurrency"></select></label>
+        <label>Cadence<select id="incomeCadence"><option>monthly</option><option>weekly</option><option>biweekly</option><option>yearly</option></select></label>
+        <button id="saveIncomeBtn" type="button"><i data-lucide="wallet-cards"></i><span>Save income</span></button>
       </section>
     </div>
 

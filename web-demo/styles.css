@@ -94,6 +94,13 @@ button:active {
   transform: translateY(1px);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
+  box-shadow: none;
+}
+
 button.secondary {
   background: transparent;
   border: 1px solid var(--border-subtle);
@@ -366,6 +373,10 @@ label {
 .topbar h2 {
   font-size: 28px;
   letter-spacing: -0.01em;
+}
+
+.topbar h2:empty {
+  display: none;
 }
 
 .top-actions,
@@ -843,13 +854,100 @@ label {
   background: linear-gradient(90deg, var(--ring-budget), var(--ring-expense), var(--ring-remaining));
 }
 
-.money-hero {
-  min-height: 96px;
-  padding: 18px;
+.money-header {
   display: flex;
-  align-items: center;
+  align-items: start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
+}
+
+.money-header h1 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 46px);
+  letter-spacing: 0;
+  line-height: 1.02;
+}
+
+.money-header p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.settings-pill {
+  min-height: 38px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.commitment-hero {
+  display: grid;
+  gap: 10px;
+}
+
+.commitment-meter {
+  position: relative;
+  min-height: 56px;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: #07100f;
+  isolation: isolate;
+}
+
+.commitment-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  transform-origin: left center;
+  background:
+    linear-gradient(
+      90deg,
+      var(--mint-400) 0 var(--essentials, 0%),
+      var(--teal-500) var(--essentials, 0%) calc(var(--essentials, 0%) + var(--subscriptions, 0%)),
+      var(--info) calc(var(--essentials, 0%) + var(--subscriptions, 0%)) calc(var(--essentials, 0%) + var(--subscriptions, 0%) + var(--flexible, 0%)),
+      transparent calc(var(--essentials, 0%) + var(--subscriptions, 0%) + var(--flexible, 0%))
+    );
+  opacity: 0.92;
+  transition: background var(--dur-med) var(--ease-out);
+  z-index: -1;
+}
+
+.commitment-overflow {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  right: 10px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--caution);
+  box-shadow: 0 0 18px rgba(217, 164, 65, 0.42);
+}
+
+.commitment-hero.over .commitment-meter {
+  border-color: rgba(217, 164, 65, 0.52);
+}
+
+.commitment-copy {
+  min-height: 56px;
+  padding: 9px 18px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  color: var(--ink);
+}
+
+.commitment-copy strong {
+  font-size: clamp(17px, 2.2vw, 24px);
+  font-variant-numeric: tabular-nums;
+}
+
+.commitment-copy span {
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .region-bar {
@@ -897,7 +995,7 @@ label {
 }
 
 .money-tab {
-  min-height: 34px;
+  min-height: 38px;
   padding: 7px 16px;
   border-radius: 999px;
   background: transparent;
@@ -910,8 +1008,8 @@ label {
 }
 
 .money-tab.active {
-  background: var(--accent-dark);
-  color: #ffffff;
+  background: var(--mint-400);
+  color: #06211d;
 }
 
 .money-panel {
@@ -925,6 +1023,151 @@ label {
 
 .settings-row {
   opacity: 0.92;
+}
+
+.expense-groups,
+.income-list {
+  display: grid;
+  gap: 14px;
+}
+
+.expense-group-card {
+  --group-accent: var(--mint-400);
+  border: 1px solid color-mix(in srgb, var(--group-accent) 28%, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--group-accent) 9%, transparent), transparent 36%),
+    var(--surface);
+  overflow: hidden;
+}
+
+.expense-group-card.teal {
+  --group-accent: var(--teal-500);
+}
+
+.expense-group-card.info {
+  --group-accent: var(--info);
+}
+
+.expense-group-head {
+  padding: 18px;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.expense-group-head h3,
+.expense-group-head p {
+  margin: 0;
+}
+
+.expense-group-head h3 {
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.expense-group-head p,
+.expense-group-head small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.expense-group-head strong {
+  color: var(--group-accent);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.expense-row-list {
+  display: grid;
+}
+
+.expense-row {
+  border-top: 1px solid var(--line);
+}
+
+.expense-row-summary {
+  width: 100%;
+  min-height: 58px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  text-align: left;
+  justify-content: stretch;
+}
+
+.expense-row-summary:hover {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+}
+
+.expense-row-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.expense-row-amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.expense-row-editor {
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 18px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 180px) auto;
+  gap: 12px;
+  align-items: end;
+  transition: max-height var(--dur-med) var(--ease-out), padding var(--dur-med) var(--ease-out);
+}
+
+.expense-row.expanded .expense-row-editor {
+  max-height: 170px;
+  padding: 0 18px 18px;
+}
+
+.add-expense-btn {
+  width: calc(100% - 28px);
+  margin: 14px;
+  border-style: dashed;
+  color: var(--group-accent);
+}
+
+.income-panel .section-head {
+  align-items: center;
+}
+
+.income-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  padding: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.income-card div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.income-card span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.row-actions {
+  display: inline-flex;
+  gap: 8px;
 }
 
 .assignment-card {
@@ -1327,7 +1570,15 @@ label {
 
 .modal-panel {
   width: min(460px, 100%);
+  max-height: min(780px, 92vh);
+  overflow: auto;
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+}
+
+.modal-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 0;
 }
 
 @keyframes ringPulse {
@@ -1415,7 +1666,7 @@ label {
   }
 
   .hero-band,
-  .money-hero,
+  .money-header,
   .nudge-bar,
   .draft-main {
     align-items: stretch;
@@ -1425,6 +1676,40 @@ label {
 
   .assignment-card {
     min-width: 0;
+  }
+
+  .settings-pill {
+    width: fit-content;
+  }
+
+  .commitment-meter {
+    min-height: 50px;
+  }
+
+  .commitment-copy {
+    min-height: 50px;
+    padding: 8px 12px;
+  }
+
+  .expense-group-head,
+  .income-card {
+    display: grid;
+  }
+
+  .expense-group-head strong {
+    white-space: normal;
+  }
+
+  .expense-row-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .expense-row-amount {
+    grid-column: 2;
+  }
+
+  .expense-row-editor {
+    grid-template-columns: 1fr;
   }
 
   .goal-row,

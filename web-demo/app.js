@@ -107,6 +107,43 @@ const CATEGORY_GROUPS = [
   },
 ];
 
+const EXPENSE_GROUPS = [
+  {
+    id: "essentials",
+    name: "Essentials",
+    accent: "mint",
+    category: "Essentials",
+    subhead: "The things you can't skip.",
+    empty: "",
+    rows: [
+      { slug: "rent-mortgage", label: "Rent/Mortgage", icon: "RM", aliases: /\b(rent|mortgage|house|apartment)\b/i },
+      { slug: "food-groceries", label: "Food/Groceries", icon: "FG", aliases: /\b(food|grocery|groceries|rice|vegetable|meal)\b/i },
+      { slug: "utilities", label: "Utilities", icon: "UT", aliases: /\b(utility|utilities|electric|water|internet|wifi|bill)\b/i },
+      { slug: "transport", label: "Transport", icon: "TR", aliases: /\b(transport|bus|taxi|fuel|petrol|ride)\b/i },
+      { slug: "clothing", label: "Clothing", icon: "CL", aliases: /\b(clothing|clothes|shirt|shoes|uniform)\b/i },
+    ],
+  },
+  {
+    id: "subscriptions",
+    name: "Subscriptions",
+    accent: "teal",
+    category: "Subscriptions",
+    subhead: "The quiet monthly drains.",
+    empty: "No subscriptions yet. They're easy to forget, that's the point.",
+    rows: [],
+  },
+  {
+    id: "flexible",
+    name: "Flexible",
+    accent: "info",
+    category: "Flexible",
+    subhead: "Where your Rival lives.",
+    note: "Spending here shows its impact on your goal.",
+    empty: "Add custom categories for the spending you want to watch gently.",
+    rows: [],
+  },
+];
+
 const state = {
   supabase: null,
   session: null,
@@ -121,6 +158,7 @@ const state = {
   pendingCount: 0,
   categoryBudgets: [],
   selectedCategoryId: "phone-internet",
+  pendingExpenseAmounts: {},
   captureAttachment: null,
   selectedPaymentMethod: null,
   goalPhotoFile: null,
@@ -330,7 +368,7 @@ function syncCategoryRowDisplay(category, groupName) {
 }
 
 function categoryBudgetTotal() {
-  return allCategories().reduce((total, category) => total + Number(category.amount || 0), 0);
+  return committedTotal();
 }
 
 function monthlyIncomeTotal() {
@@ -345,6 +383,111 @@ function monthlyIncomeTotal() {
     const multiplier = multipliers[item.cadence] || 1;
     return total + Number(item.amount || 0) * multiplier;
   }, 0);
+}
+
+function monthlyMultiplier(cadence = "monthly") {
+  return {
+    weekly: 4,
+    biweekly: 2,
+    monthly: 1,
+    yearly: 1 / 12,
+    daily: 30,
+  }[cadence] || 1;
+}
+
+function monthlyExpenseAmount(item) {
+  return Number(item?.amount || 0) * monthlyMultiplier(item?.cadence || "monthly");
+}
+
+function committedTotal() {
+  return Object.values(expenseGroupTotals()).reduce((total, amount) => total + Number(amount || 0), 0);
+}
+
+function groupSpec(groupId) {
+  return EXPENSE_GROUPS.find((group) => group.id === groupId) || EXPENSE_GROUPS[0];
+}
+
+function classifyRecurringExpense(item) {
+  const text = `${item?.category || ""} ${item?.label || ""}`;
+  const normalized = normalizeText(text);
+  if (/\b(subscription|subscriptions|netflix|spotify|gym|prime|plan|software|saas)\b/.test(normalized)) return "subscriptions";
+  if (/\b(flexible|wants|rival|dining|entertainment|vacation|shopping)\b/.test(normalized)) return "flexible";
+  return "essentials";
+}
+
+function canonicalEssentialFor(item) {
+  const spec = groupSpec("essentials");
+  const text = `${item?.category || ""} ${item?.label || ""}`;
+  return spec.rows.find((row) => row.aliases.test(text)) || null;
+}
+
+function expenseRowKey(row) {
+  return row.id ? `recurring:${row.id}` : `new:${row.groupId}:${row.slug}`;
+}
+
+function buildExpenseGroups() {
+  const byGroup = new Map(EXPENSE_GROUPS.map((group) => [group.id, []]));
+  const essentials = groupSpec("essentials");
+  const essentialRows = new Map(essentials.rows.map((row) => [row.slug, {
+    ...row,
+    id: null,
+    groupId: "essentials",
+    category: essentials.category,
+    amount: 0,
+    currency: state.profile?.default_currency || "NPR",
+    cadence: "monthly",
+    payment_method: "unknown",
+    next_due_date: today(),
+  }]));
+
+  for (const item of state.recurringExpenses) {
+    const groupId = classifyRecurringExpense(item);
+    if (groupId === "essentials") {
+      const canonical = canonicalEssentialFor(item);
+      if (canonical) {
+        essentialRows.set(canonical.slug, {
+          ...canonical,
+          ...item,
+          slug: canonical.slug,
+          label: canonical.label,
+          groupId,
+          category: "Essentials",
+          amount: monthlyExpenseAmount(item),
+        });
+        continue;
+      }
+    }
+
+    byGroup.get(groupId)?.push({
+      id: item.id,
+      slug: item.id,
+      groupId,
+      label: item.label,
+      icon: (item.label || "?").slice(0, 1).toUpperCase(),
+      amount: monthlyExpenseAmount(item),
+      currency: item.currency,
+      category: item.category,
+      payment_method: item.payment_method,
+      next_due_date: item.next_due_date,
+      cadence: item.cadence,
+    });
+  }
+
+  byGroup.set("essentials", Array.from(essentialRows.values()));
+  return EXPENSE_GROUPS.map((group) => ({
+    ...group,
+    rows: (byGroup.get(group.id) || []).map((row) => {
+      const key = expenseRowKey(row);
+      return state.pendingExpenseAmounts[key] === undefined ? row : { ...row, amount: state.pendingExpenseAmounts[key] };
+    }),
+  }));
+}
+
+function expenseGroupTotals() {
+  return buildExpenseGroups().reduce((totals, group) => {
+    totals[group.id] = group.rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    return totals;
+  }, {});
 }
 
 function currentExpenseTotal() {
@@ -505,6 +648,7 @@ async function saveProfileCurrency() {
   renderFinanceRings();
   renderBudgetPlan();
   if (els.profileSavedNote) els.profileSavedNote.classList.remove("hidden");
+  closeMoneySettingsModal();
   showAlert("Currency and location verified.");
 }
 
@@ -560,6 +704,7 @@ async function loadRecurringExpenses() {
     .order("next_due_date", { ascending: true });
   if (error) throw error;
   state.recurringExpenses = data || [];
+  state.pendingExpenseAmounts = {};
   renderRecurringExpenses();
 }
 
@@ -567,9 +712,9 @@ async function saveGoal() {
   const userId = state.session?.user?.id;
   if (!userId) throw new Error("Sign in first.");
 
-  const name = ($("#modalGoalName")?.value || $("#goalName").value).trim();
-  const amount = Number($("#modalGoalAmount")?.value || $("#goalAmount").value);
-  const code = currency($("#modalGoalCurrency")?.value || $("#goalCurrency").value || state.profile?.default_currency || "NPR");
+  const name = ($("#modalGoalName")?.value || $("#goalName")?.value || "").trim();
+  const amount = Number($("#modalGoalAmount")?.value || $("#goalAmount")?.value || 0);
+  const code = currency($("#modalGoalCurrency")?.value || $("#goalCurrency")?.value || state.profile?.default_currency || "NPR");
   if (!name || !amount) throw new Error("Goal name and target amount are required.");
   const photoPath = state.goalPhotoFile ? await uploadGoalPhoto(state.goalPhotoFile) : ($("#goalPhotoPath")?.value || state.goal?.photo_path || null);
 
@@ -598,21 +743,26 @@ async function saveGoal() {
 async function saveIncomeSource() {
   const userId = state.session?.user?.id;
   if (!userId) throw new Error("Sign in first.");
+  const editingId = $("#incomeModal")?.dataset.editingId || "";
   const label = $("#incomeLabel").value.trim();
   const amount = Number($("#incomeAmount").value);
   if (!label || amount < 0) throw new Error("Income label and amount are required.");
 
-  const { error } = await requireClient().from("income_sources").insert({
-    user_id: userId,
+  const payload = {
     label,
     amount,
     currency: currency($("#incomeCurrency").value || state.profile?.default_currency || "NPR"),
     cadence: $("#incomeCadence").value,
     is_active: true,
-  });
+  };
+
+  const { error } = editingId
+    ? await requireClient().from("income_sources").update(payload).eq("id", editingId)
+    : await requireClient().from("income_sources").insert({ user_id: userId, ...payload });
   if (error) throw error;
   $("#incomeLabel").value = "";
   $("#incomeAmount").value = "";
+  closeIncomeModal();
   await loadIncomeSources();
   showAlert("Income source added.");
 }
@@ -620,28 +770,85 @@ async function saveIncomeSource() {
 async function saveRecurringExpense() {
   const userId = state.session?.user?.id;
   if (!userId) throw new Error("Sign in first.");
+  const groupId = $("#expenseGroupInput").value || "subscriptions";
+  const group = groupSpec(groupId);
+  const editingId = $("#expenseModal")?.dataset.editingId || "";
   const label = $("#recurringLabel").value.trim();
   const amount = Number($("#recurringAmount").value);
-  if (!label || !amount || amount <= 0) throw new Error("Fixed expense label and amount are required.");
+  if (!label || !amount || amount <= 0) throw new Error("Name and monthly amount are required.");
 
-  const dueDayRaw = $("#recurringDueDay").value;
-  const { error } = await requireClient().from("recurring_expenses").insert({
-    user_id: userId,
+  const payload = {
     label,
     amount,
     currency: currency($("#recurringCurrency").value || state.profile?.default_currency || "NPR"),
-    category: $("#recurringCategory").value.trim() || "Bills",
+    category: group.category,
     payment_method: $("#recurringMethod").value,
-    cadence: $("#recurringCadence").value,
-    due_day: dueDayRaw ? Number(dueDayRaw) : null,
-    next_due_date: $("#recurringNextDue").value || today(),
+    cadence: "monthly",
+    due_day: new Date().getDate(),
+    next_due_date: today(),
     is_active: true,
-  });
+  };
+
+  const { error } = editingId
+    ? await requireClient().from("recurring_expenses").update(payload).eq("id", editingId)
+    : await requireClient().from("recurring_expenses").insert({ user_id: userId, ...payload });
   if (error) throw error;
   $("#recurringLabel").value = "";
   $("#recurringAmount").value = "";
+  closeExpenseModal();
   await loadRecurringExpenses();
-  showAlert("Fixed expense added.");
+  showAlert("Monthly item saved.");
+}
+
+async function saveExpenseAmount(rowKey, amount) {
+  const userId = state.session?.user?.id;
+  if (!userId) throw new Error("Sign in first.");
+  const normalizedAmount = Math.max(0, Number(amount) || 0);
+  const groups = buildExpenseGroups();
+  const row = groups.flatMap((group) => group.rows).find((item) => expenseRowKey(item) === rowKey);
+  if (!row) return;
+
+  if (row.id) {
+    const { error } = await requireClient()
+      .from("recurring_expenses")
+      .update({ amount: normalizedAmount, cadence: "monthly", category: groupSpec(row.groupId).category })
+      .eq("id", row.id);
+    if (error) throw error;
+  } else {
+    if (normalizedAmount <= 0) return;
+    const group = groupSpec(row.groupId);
+    const { error } = await requireClient().from("recurring_expenses").insert({
+      user_id: userId,
+      label: row.label,
+      amount: normalizedAmount,
+      currency: currency(state.profile?.default_currency || "NPR"),
+      category: group.category,
+      payment_method: "unknown",
+      cadence: "monthly",
+      due_day: new Date().getDate(),
+      next_due_date: today(),
+      is_active: true,
+    });
+    if (error) throw error;
+  }
+
+  await loadRecurringExpenses();
+}
+
+async function deleteRecurringExpense(id) {
+  if (!id) return;
+  const { error } = await requireClient().from("recurring_expenses").update({ is_active: false }).eq("id", id);
+  if (error) throw error;
+  await loadRecurringExpenses();
+  showAlert("Monthly item removed.");
+}
+
+async function deleteIncomeSource(id) {
+  if (!id) return;
+  const { error } = await requireClient().from("income_sources").update({ is_active: false }).eq("id", id);
+  if (error) throw error;
+  await loadIncomeSources();
+  showAlert("Income source removed.");
 }
 
 function renderGoal() {
@@ -661,8 +868,8 @@ function renderGoal() {
     return;
   }
 
-  $("#goalName").value = goal.name || "";
-  $("#goalAmount").value = goal.target_amount || "";
+  if ($("#goalName")) $("#goalName").value = goal.name || "";
+  if ($("#goalAmount")) $("#goalAmount").value = goal.target_amount || "";
   populateCurrencySelect("goalCurrency", goal.currency || "NPR");
   populateCurrencySelect("modalGoalCurrency", goal.currency || state.profile?.default_currency || "NPR");
 
@@ -696,91 +903,174 @@ function closeGoalModal() {
   $("#goalModal")?.classList.add("hidden");
 }
 
+function openMoneySettingsModal() {
+  refreshCurrencyDefaults();
+  $("#moneySettingsModal").classList.remove("hidden");
+}
+
+function closeMoneySettingsModal() {
+  $("#moneySettingsModal")?.classList.add("hidden");
+}
+
+function openExpenseModal(groupId = "subscriptions", row = null) {
+  const group = groupSpec(groupId);
+  $("#expenseModal").dataset.editingId = row?.id || "";
+  $("#expenseGroupInput").value = group.id;
+  $("#expenseModalTitle").textContent = row?.id ? `Edit ${row.label}` : `Add to ${group.name}`;
+  $("#recurringLabel").value = row?.id ? row.label || "" : "";
+  $("#recurringAmount").value = row?.id ? Number(row.amount || 0) : "";
+  $("#recurringMethod").value = row?.payment_method || "unknown";
+  populateCurrencySelect("recurringCurrency", row?.currency || state.profile?.default_currency || "NPR");
+  $("#expenseModal").classList.remove("hidden");
+}
+
+function closeExpenseModal() {
+  $("#expenseModal")?.classList.add("hidden");
+  if ($("#expenseModal")) $("#expenseModal").dataset.editingId = "";
+}
+
+function openIncomeModal(item = null) {
+  $("#incomeModal").dataset.editingId = item?.id || "";
+  $("#incomeModalTitle").textContent = item?.id ? `Edit ${item.label}` : "Add income source";
+  $("#incomeLabel").value = item?.label || "";
+  $("#incomeAmount").value = item?.amount ?? "";
+  $("#incomeCadence").value = item?.cadence || "monthly";
+  populateCurrencySelect("incomeCurrency", item?.currency || state.profile?.default_currency || "NPR");
+  $("#incomeModal").classList.remove("hidden");
+}
+
+function closeIncomeModal() {
+  $("#incomeModal")?.classList.add("hidden");
+  if ($("#incomeModal")) $("#incomeModal").dataset.editingId = "";
+}
+
+function findExpenseRowByKey(key) {
+  return buildExpenseGroups().flatMap((group) => group.rows).find((row) => expenseRowKey(row) === key);
+}
+
+function updateExpenseRowLive(key, amount) {
+  const rowEl = document.querySelector(`[data-expense-row="${CSS.escape(key)}"]`);
+  if (!rowEl) return;
+  const row = findExpenseRowByKey(key);
+  const code = currency(row?.currency || state.profile?.default_currency || "NPR");
+  const numeric = Math.max(0, Number(amount) || 0);
+  state.pendingExpenseAmounts[key] = numeric;
+  const amountEl = rowEl.querySelector(".expense-row-amount");
+  const slider = rowEl.querySelector(`[data-expense-slider="${CSS.escape(key)}"]`);
+  const input = rowEl.querySelector(`[data-expense-amount="${CSS.escape(key)}"]`);
+  if (amountEl) amountEl.textContent = compactMoney(numeric, code);
+  if (slider && document.activeElement !== slider) {
+    slider.value = String(amountToRaw(numeric));
+    slider.style.setProperty("--fill", sliderFillPercent(numeric));
+  }
+  if (input && document.activeElement !== input) input.value = String(Math.round(numeric));
+  renderCommittedMeter(code);
+}
+
 function renderIncomeSources() {
   if (!els.incomeList) return;
   els.incomeList.innerHTML = state.incomeSources.length
     ? state.incomeSources.map((item) => `
-      <div class="mini-row">
-        <strong>${escapeHtml(item.label)}</strong>
-        <span>${money(item.amount, item.currency)} ${escapeHtml(item.cadence)}</span>
-      </div>
+      <article class="income-card">
+        <div>
+          <strong>${escapeHtml(item.label)}</strong>
+          <span>${money(item.amount, item.currency)} ${escapeHtml(item.cadence)}</span>
+        </div>
+        <div class="row-actions">
+          <button class="ghost icon-button" type="button" data-income-edit="${escapeAttr(item.id)}" aria-label="Edit ${escapeAttr(item.label)}"><i data-lucide="pencil"></i></button>
+          <button class="secondary icon-button" type="button" data-income-delete="${escapeAttr(item.id)}" aria-label="Delete ${escapeAttr(item.label)}"><i data-lucide="trash-2"></i></button>
+        </div>
+      </article>
     `).join("")
-    : "<p class=\"draft-meta\">No income sources yet.</p>";
+    : "<section class=\"empty-panel\"><p class=\"draft-meta\">Add your first income source: salary, freelance, anything that comes in.</p></section>";
   renderBudgetPlan();
+  if (window.lucide) window.lucide.createIcons();
 }
 
 function renderRecurringExpenses() {
-  if (!els.recurringList) return;
   syncCategoryBudgetsFromRecurring();
-  els.recurringList.innerHTML = state.recurringExpenses.length
-    ? state.recurringExpenses.map((item) => `
-      <div class="mini-row">
-        <strong>${escapeHtml(item.label)}</strong>
-        <span>${money(item.amount, item.currency)} due ${escapeHtml(item.next_due_date || "soon")}</span>
-      </div>
-    `).join("")
-    : "<p class=\"draft-meta\">Your bills will file themselves here as you log them, or add one manually.</p>";
   renderBudgetPlan();
 }
 
 function renderBudgetPlan() {
   if (!els.categoryGroups) return;
   const code = currency(state.profile?.default_currency || state.goal?.currency || "NPR");
-  const monthLabel = new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" }).format(new Date());
   const incomeTotal = monthlyIncomeTotal();
-  const assignedTotal = categoryBudgetTotal();
-  const selected = findCategory();
 
-  els.budgetMonth.textContent = monthLabel;
-  els.incomeTotalValue.textContent = compactMoney(incomeTotal, code);
-  els.assignedLine.textContent = `${compactMoney(assignedTotal, code)} assigned`;
+  if (els.incomeTotalValue) els.incomeTotalValue.textContent = compactMoney(incomeTotal, code);
+  renderCommittedMeter(code);
 
-  if (!state.recurringExpenses.length) {
-    els.categoryGroups.innerHTML = "<section class=\"empty-panel\"><p class=\"draft-meta\">Your bills will file themselves here as you log them, or add one manually.</p></section>";
-    renderTargetPanel(selected, code);
-    renderStatsBreakdown(code);
-    return;
-  }
-
-  els.categoryGroups.innerHTML = state.categoryBudgets.map((group) => `
-    <section class="category-group">
-      <div class="category-group-title">${escapeHtml(group.name)}</div>
-      ${group.categories.map((category) => `
-        <article class="category-row ${category.id === state.selectedCategoryId ? "active" : ""}" data-category-row="${escapeAttr(category.id)}" tabindex="0">
-          <div class="category-name">
-            <span class="category-icon">${escapeHtml(category.icon)}</span>
-            <div>
-              <strong>${escapeHtml(category.label)}</strong>
-              <small>${escapeHtml(group.name)}</small>
-            </div>
+  els.categoryGroups.innerHTML = buildExpenseGroups().map((group) => {
+    const total = group.rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const visibleRows = group.rows.filter((row) => group.id === "essentials" || row.id);
+    return `
+      <section class="expense-group-card ${group.accent}">
+        <header class="expense-group-head">
+          <div>
+            <h3>${escapeHtml(group.name)}</h3>
+            <p>${escapeHtml(group.subhead)}</p>
+            ${group.note ? `<small>${escapeHtml(group.note)}</small>` : ""}
           </div>
-          <span class="category-amount">${compactMoney(category.amount, code)}</span>
-          <input data-category-slider="${escapeAttr(category.id)}" type="range" min="0" max="${SLIDER_RAW_MAX}" step="1" value="${amountToRaw(category.amount)}" style="--fill:${sliderFillPercent(category.amount)}" aria-label="${escapeAttr(category.label)} target">
-        </article>
-      `).join("")}
-    </section>
-  `).join("");
+          <strong>${compactMoney(total, code)}</strong>
+        </header>
+        <div class="expense-row-list">
+          ${visibleRows.length ? visibleRows.map((row) => expenseRowHtml(row, code)).join("") : `<p class="draft-meta">${escapeHtml(group.empty)}</p>`}
+        </div>
+        <button class="ghost add-expense-btn" type="button" data-add-expense="${escapeAttr(group.id)}"><i data-lucide="plus"></i><span>Add</span></button>
+      </section>
+    `;
+  }).join("");
 
-  renderTargetPanel(selected, code);
   renderStatsBreakdown(code);
+  if (window.lucide) window.lucide.createIcons();
 }
 
-function renderTargetPanel(category, code) {
-  if (!category || !els.targetSlider) return;
-  const spent = categorySpent(category);
-  const amount = Number(category.amount || 0);
-  const progress = amount ? pct((spent / amount) * 100) : 0;
+function expenseRowHtml(row, code) {
+  const key = expenseRowKey(row);
+  const expanded = state.selectedCategoryId === key;
+  return `
+    <article class="expense-row ${expanded ? "expanded" : ""}" data-expense-row="${escapeAttr(key)}">
+      <button class="expense-row-summary" type="button" data-expense-toggle="${escapeAttr(key)}" aria-expanded="${expanded}">
+        <span class="category-icon">${escapeHtml(row.icon || "?")}</span>
+        <span class="expense-row-name">${escapeHtml(row.label)}</span>
+        <strong class="expense-row-amount">${compactMoney(row.amount, row.currency || code)}</strong>
+      </button>
+      <div class="expense-row-editor">
+        <label class="slider-label">
+          Monthly amount
+          <input data-expense-slider="${escapeAttr(key)}" type="range" min="0" max="${SLIDER_RAW_MAX}" step="1" value="${amountToRaw(row.amount)}" style="--fill:${sliderFillPercent(row.amount)}" aria-label="${escapeAttr(row.label)} monthly amount">
+        </label>
+        <label>Amount<input data-expense-amount="${escapeAttr(key)}" type="number" min="0" step="1" value="${Number(row.amount || 0)}" aria-label="${escapeAttr(row.label)} amount"></label>
+        <button class="secondary" type="button" data-expense-delete="${escapeAttr(row.id || "")}" ${row.id ? "" : "disabled"}><i data-lucide="trash-2"></i><span>Delete</span></button>
+      </div>
+    </article>
+  `;
+}
 
-  els.targetTitle.textContent = category.label;
-  els.targetGroup.textContent = category.group;
-  els.targetIcon.textContent = category.icon;
-  els.targetAmountValue.textContent = compactMoney(amount, code);
-  els.targetHint.textContent = "Monthly amount";
-  els.targetSlider.value = String(amountToRaw(amount));
-  els.targetSlider.style.setProperty("--fill", sliderFillPercent(amount));
-  els.targetSpentValue.textContent = compactMoney(amount, code);
-  els.targetRemainingValue.textContent = compactMoney(spent, code);
-  els.targetProgressBar.style.width = `${progress}%`;
+function renderCommittedMeter(code = currency(state.profile?.default_currency || "NPR")) {
+  const incomeTotal = monthlyIncomeTotal();
+  const committed = committedTotal();
+  const totals = expenseGroupTotals();
+  const safeIncome = Math.max(incomeTotal, 0);
+  const percent = safeIncome ? Math.round((committed / safeIncome) * 100) : 0;
+  const capped = safeIncome ? Math.min(100, (committed / safeIncome) * 100) : 0;
+  const essentials = safeIncome ? Math.min(capped, (totals.essentials / safeIncome) * 100) : 0;
+  const subscriptions = safeIncome ? Math.min(Math.max(capped - essentials, 0), (totals.subscriptions / safeIncome) * 100) : 0;
+  const flexible = Math.max(capped - essentials - subscriptions, 0);
+
+  $("#moneySettingsText").textContent = `${code} · ${(state.profile?.timezone || detectedTimezone()).replaceAll("_", " ")}`;
+  $("#commitmentFill").style.setProperty("--essentials", `${essentials}%`);
+  $("#commitmentFill").style.setProperty("--subscriptions", `${subscriptions}%`);
+  $("#commitmentFill").style.setProperty("--flexible", `${flexible}%`);
+  $("#commitmentText").textContent = `${money(committed, code)} of ${money(incomeTotal, code)} committed`;
+  $("#commitmentHero").classList.toggle("over", safeIncome > 0 && committed > safeIncome);
+  $("#commitmentOverflow").classList.toggle("hidden", !(safeIncome > 0 && committed > safeIncome));
+  $("#addIncomeInlineBtn").classList.toggle("hidden", safeIncome > 0);
+  $("#commitmentSubline").textContent = safeIncome <= 0
+    ? "Add an income source to see how your month is shaped."
+    : committed > safeIncome
+      ? "Your commitments run a little past your income."
+      : `${percent}% of your income has a job. The rest is yours to spend or protect.`;
 }
 
 function renderStatsBreakdown(code = currency(state.profile?.default_currency || state.goal?.currency || "NPR")) {
@@ -1206,11 +1496,11 @@ function switchView(view) {
   $$(".view").forEach((item) => item.classList.toggle("active", item.id === `view-${view}`));
   const titles = {
     capture: "Smart Capture",
-    money: "Expense and Income",
+    money: "",
     review: "Nightly Review",
     stats: "Stats",
   };
-  els.viewTitle.textContent = titles[view] || "Wallet Whisperer";
+  els.viewTitle.textContent = titles[view] ?? "Wallet Whisperer";
 }
 
 function switchMoneyTab(tab) {
@@ -1305,7 +1595,7 @@ function bindEvents() {
   $("#signInBtn").addEventListener("click", () => guard(signIn));
   $("#signUpBtn").addEventListener("click", () => guard(signUp));
   $("#signOutBtn").addEventListener("click", () => guard(signOut));
-  $("#saveGoalBtn").addEventListener("click", () => guard(saveGoal));
+  $("#saveGoalBtn")?.addEventListener("click", () => guard(saveGoal));
   $("#modalSaveGoalBtn").addEventListener("click", () => guard(saveGoal));
   $("#closeGoalModalBtn").addEventListener("click", closeGoalModal);
   $("#modalGoalPhotoBtn").addEventListener("click", () => $("#modalGoalPhoto").click());
@@ -1314,6 +1604,12 @@ function bindEvents() {
     $("#modalGoalPhotoName").textContent = state.goalPhotoFile?.name || "";
     $("#modalGoalPhotoName").classList.toggle("hidden", !state.goalPhotoFile);
   });
+  $("#moneySettingsPill").addEventListener("click", openMoneySettingsModal);
+  $("#closeMoneySettingsBtn").addEventListener("click", closeMoneySettingsModal);
+  $("#addIncomeBtn").addEventListener("click", () => openIncomeModal());
+  $("#addIncomeInlineBtn").addEventListener("click", () => openIncomeModal());
+  $("#closeIncomeModalBtn").addEventListener("click", closeIncomeModal);
+  $("#closeExpenseModalBtn").addEventListener("click", closeExpenseModal);
   $("#saveProfileBtn").addEventListener("click", () => guard(saveProfileCurrency));
   $("#saveIncomeBtn").addEventListener("click", () => guard(saveIncomeSource));
   $("#saveRecurringBtn").addEventListener("click", () => guard(saveRecurringExpense));
@@ -1339,28 +1635,52 @@ function bindEvents() {
     }
   }));
   els.categoryGroups.addEventListener("click", (event) => {
-    const row = event.target.closest("[data-category-row]");
-    if (!row) return;
-    state.selectedCategoryId = row.dataset.categoryRow;
-    renderBudgetPlan();
-  });
-  els.categoryGroups.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    const row = event.target.closest("[data-category-row]");
-    if (!row) return;
-    event.preventDefault();
-    state.selectedCategoryId = row.dataset.categoryRow;
+    const addButton = event.target.closest("[data-add-expense]");
+    if (addButton) {
+      openExpenseModal(addButton.dataset.addExpense);
+      return;
+    }
+
+    const deleteButton = event.target.closest("[data-expense-delete]");
+    if (deleteButton && deleteButton.dataset.expenseDelete) {
+      guard(() => deleteRecurringExpense(deleteButton.dataset.expenseDelete));
+      return;
+    }
+
+    const toggle = event.target.closest("[data-expense-toggle]");
+    if (!toggle) return;
+    state.selectedCategoryId = state.selectedCategoryId === toggle.dataset.expenseToggle ? "" : toggle.dataset.expenseToggle;
     renderBudgetPlan();
   });
   els.categoryGroups.addEventListener("input", (event) => {
-    const id = event.target?.dataset?.categorySlider;
-    if (!id) return;
-    event.target.style.setProperty("--fill", `${(Number(event.target.value) / SLIDER_RAW_MAX) * 100}%`);
-    updateCategoryAmount(id, rawToAmount(event.target.value));
+    const sliderKey = event.target?.dataset?.expenseSlider;
+    const amountKey = event.target?.dataset?.expenseAmount;
+    if (sliderKey) {
+      const amount = rawToAmount(event.target.value);
+      event.target.style.setProperty("--fill", sliderFillPercent(amount));
+      updateExpenseRowLive(sliderKey, amount);
+    }
+    if (amountKey) {
+      updateExpenseRowLive(amountKey, Number(event.target.value));
+    }
   });
-  els.targetSlider.addEventListener("input", (event) => {
-    event.target.style.setProperty("--fill", `${(Number(event.target.value) / SLIDER_RAW_MAX) * 100}%`);
-    updateCategoryAmount(state.selectedCategoryId, rawToAmount(event.target.value));
+  els.categoryGroups.addEventListener("change", (event) => {
+    const sliderKey = event.target?.dataset?.expenseSlider;
+    const amountKey = event.target?.dataset?.expenseAmount;
+    const key = sliderKey || amountKey;
+    if (!key) return;
+    const amount = sliderKey ? rawToAmount(event.target.value) : Number(event.target.value);
+    guard(() => saveExpenseAmount(key, amount));
+  });
+  els.incomeList.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-income-edit]");
+    if (editButton) {
+      const item = state.incomeSources.find((entry) => entry.id === editButton.dataset.incomeEdit);
+      openIncomeModal(item);
+      return;
+    }
+    const deleteButton = event.target.closest("[data-income-delete]");
+    if (deleteButton) guard(() => deleteIncomeSource(deleteButton.dataset.incomeDelete));
   });
   els.draftList.addEventListener("input", (event) => {
     const id = event.target?.dataset?.draft;
