@@ -367,6 +367,16 @@ label {
   font-variant-numeric: tabular-nums;
 }
 
+.nav-badge.bump {
+  animation: navBadgeBump 480ms var(--ease-out);
+}
+
+@keyframes navBadgeBump {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.35); box-shadow: 0 0 0 6px rgba(2, 195, 154, 0.22); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(2, 195, 154, 0); }
+}
+
 .workspace {
   min-width: 0;
   padding: 24px;
@@ -652,8 +662,92 @@ label {
 }
 
 .quick-log-panel {
+  position: relative;
   padding: 22px;
   gap: 14px;
+}
+
+.capture-celebration {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(2, 195, 154, 0.18), rgba(2, 195, 154, 0.06));
+  border: 1px solid rgba(2, 195, 154, 0.34);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 5;
+}
+
+.capture-celebration.show {
+  animation: captureCelebrationIn var(--dur-slow) var(--ease-out) forwards;
+}
+
+.capture-celebration.hide {
+  animation: captureCelebrationOut var(--dur-med) var(--ease-out) forwards;
+}
+
+@keyframes captureCelebrationIn {
+  0% { opacity: 0; transform: translateY(10px) scale(0.96); }
+  55% { opacity: 1; transform: translateY(-3px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes captureCelebrationOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-8px) scale(0.98); }
+}
+
+.capture-celebration-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(2, 195, 154, 0.2);
+  color: var(--mint-400);
+}
+
+.capture-celebration-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.capture-celebration-icon.streak {
+  background: rgba(217, 164, 65, 0.2);
+  color: var(--caution);
+}
+
+.capture-celebration-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.capture-celebration-copy strong {
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.capture-celebration-copy span {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 560px) {
+  .capture-celebration {
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    padding: 12px 14px;
+  }
 }
 
 .quick-log-panel .section-head {

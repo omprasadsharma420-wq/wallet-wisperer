@@ -1268,7 +1268,6 @@ async function createDraft(source, rawText, subject = null, sourceReference = nu
     default_currency: state.profile?.default_currency || state.goal?.currency || "NPR",
     payment_method: state.selectedPaymentMethod,
   });
-  showAlert("Nice, saved for tonight's review.");
   await nightlyReview(false);
   pulseRing();
   return data;
@@ -1306,7 +1305,50 @@ async function quickLogDraft() {
   $("#captureInput").value = "";
   $("#captureAttachment").value = "";
   setCaptureAttachment(null);
+  showCaptureCelebration(state.pendingCount);
+  $("#captureInput").focus();
   return data;
+}
+
+// Escalating, never-shaming praise for the running count of clues waiting
+// in tonight's Close-the-Day queue. Mirrors Duolingo's combo-feedback
+// psychology (immediate reward, rising warmth) using the product's own
+// honest number instead of an invented XP score.
+function pickCaptureCelebration(count) {
+  const n = Math.max(1, count);
+  if (n === 1) return { icon: "sparkles", title: "Nice catch.", sub: "1 clue saved for tonight." };
+  if (n === 2) return { icon: "sparkles", title: "Two in a row.", sub: `${n} clues saved for tonight.` };
+  if (n <= 4) return { icon: "flame", title: "You're on it.", sub: `${n} clues saved for tonight.` };
+  if (n <= 6) return { icon: "flame", title: "Look at you go.", sub: `${n} clues saved — tonight's review is going to be good.` };
+  return { icon: "trophy", title: "You're on fire today.", sub: `${n} clues saved for tonight.` };
+}
+
+let captureCelebrationTimer = null;
+function showCaptureCelebration(count) {
+  const el = document.getElementById("captureCelebration");
+  if (!el) return;
+  const { icon, title, sub } = pickCaptureCelebration(count);
+  const iconEl = document.getElementById("captureCelebrationIcon");
+  const titleEl = document.getElementById("captureCelebrationTitle");
+  const subEl = document.getElementById("captureCelebrationSub");
+  if (titleEl) titleEl.textContent = title;
+  if (subEl) subEl.textContent = sub;
+  if (iconEl) {
+    iconEl.innerHTML = `<i data-lucide="${icon}"></i>`;
+    iconEl.classList.toggle("streak", icon !== "sparkles");
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  window.clearTimeout(captureCelebrationTimer);
+  el.classList.remove("hidden", "hide");
+  void el.offsetWidth; // restart the entrance animation if it's already mid-flight
+  el.classList.add("show");
+
+  captureCelebrationTimer = window.setTimeout(() => {
+    el.classList.remove("show");
+    el.classList.add("hide");
+    window.setTimeout(() => el.classList.add("hidden"), 260);
+  }, 2400);
 }
 
 async function parsePreview() {
@@ -1325,6 +1367,7 @@ async function nightlyReview(queueNotification) {
     timezone: state.profile?.timezone || detectedTimezone(),
     queue_notification: queueNotification,
   });
+  const previousPendingCount = state.pendingCount || 0;
   state.drafts = data.drafts || [];
   state.pendingCount = data.pending_count || 0;
   els.nightlyLine.textContent = data.notification?.full_text || "No captured transactions yet.";
@@ -1332,11 +1375,22 @@ async function nightlyReview(queueNotification) {
   if (els.reviewBadge) {
     els.reviewBadge.textContent = String(state.pendingCount);
     els.reviewBadge.classList.toggle("hidden", state.pendingCount === 0);
+    if (state.pendingCount > previousPendingCount) bumpReviewBadge();
   }
   if (data.goal) state.goal = data.goal;
   renderGoal();
   renderNudge(data.notification);
   renderDrafts();
+}
+
+function bumpReviewBadge() {
+  const badge = els.reviewBadge;
+  if (!badge) return;
+  badge.classList.remove("bump");
+  window.requestAnimationFrame(() => {
+    badge.classList.add("bump");
+    window.setTimeout(() => badge.classList.remove("bump"), 500);
+  });
 }
 
 function closeDayStorageKey() {
