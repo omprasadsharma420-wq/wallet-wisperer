@@ -13,6 +13,7 @@ type ConfirmEdit = {
   occurred_at?: string;
   note?: string | null;
   is_skipped_opportunity?: boolean;
+  create_recurring?: boolean;
 };
 
 type ConfirmDraftsRequest = {
@@ -20,6 +21,49 @@ type ConfirmDraftsRequest = {
   ignore_ids?: string[];
   edits?: Record<string, ConfirmEdit>;
 };
+
+type TransactionInsert = {
+  user_id: string;
+  draft_id: string;
+  goal_id: string | null;
+  kind: "expense" | "income" | "transfer";
+  amount: number;
+  currency: string;
+  merchant: string | null;
+  category: string;
+  necessity: "flexible" | "needed" | "fixed" | "unknown";
+  payment_method: "cash" | "card" | "wallet" | "bank_transfer" | "unknown";
+  occurred_at: string;
+  note: string | null;
+  is_skipped_opportunity: boolean;
+  goal_percent: number | null;
+};
+
+function normalizeLabel(value: string | null | undefined): string {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function fuzzyMatches(left: string | null | undefined, right: string | null | undefined): boolean {
+  const a = normalizeLabel(left);
+  const b = normalizeLabel(right);
+  if (!a || !b) return false;
+  if (a.includes(b) || b.includes(a)) return true;
+  const aTokens = new Set(a.split(" ").filter((token) => token.length > 2));
+  const bTokens = b.split(" ").filter((token) => token.length > 2);
+  if (aTokens.size === 0 || bTokens.length === 0) return false;
+  const overlap = bTokens.filter((token) => aTokens.has(token)).length;
+  return overlap / Math.max(aTokens.size, bTokens.length) >= 0.6;
+}
+
+function sameDayNextMonth(isoValue: string): string {
+  const date = new Date(isoValue);
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
+  const day = date.getUTCDate();
+  const next = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+  const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
+  next.setUTCDate(Math.min(day, lastDay));
+  return next.toISOString().slice(0, 10);
+}
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -44,6 +88,7 @@ Deno.serve(async (req) => {
     if (goalError) throw new HttpError(500, "Failed to load active goal.", goalError);
 
     let confirmedTransactions: unknown[] = [];
+    let recurringCount = 0;
 
     if (confirmIds.length > 0) {
       const { data: drafts, error: draftError } = await userClient
@@ -54,7 +99,7 @@ Deno.serve(async (req) => {
 
       if (draftError) throw new HttpError(500, "Failed to load drafts.", draftError);
 
-      const transactions = (drafts ?? []).map((draft) => {
+      const transactions: TransactionInsert[] = (drafts ?? []).map((draft) => {
         const edit = body.edits?.[draft.id] ?? {};
         const amount = Number(edit.amount ?? draft.parsed_amount);
 
@@ -95,6 +140,50 @@ Deno.serve(async (req) => {
         confirmedTransactions = data ?? [];
       }
 
+      const recurringCandidates = transactions.filter((transaction) => {
+        const edit = body.edits?.[transaction.draft_id] ?? {};
+        return Boolean(edit.create_recurring) && transaction.kind === "expense" && transaction.amount > 0;
+      });
+
+      if (recurringCandidates.length > 0) {
+        const { data: existingRows, error: existingError } = await userClient
+          .from("recurring_expenses")
+          .select("*")
+          .eq("is_active", true);
+
+        if (existingError) throw new HttpError(500, "Failed to load recurring expenses.", existingError);
+
+        for (const transaction of recurringCandidates) {
+          const label = transaction.merchant || transaction.category || "Monthly bill";
+          const existing = (existingRows ?? []).find((row) => fuzzyMatches(`${label} ${transaction.category}`, `${row.label ?? ""} ${row.category ?? ""}`));
+          const nextDueDate = sameDayNextMonth(transaction.occurred_at);
+          const payload = {
+            label,
+            amount: transaction.amount,
+            currency: transaction.currency,
+            category: transaction.category || "Bills",
+            payment_method: transaction.payment_method,
+            cadence: "monthly",
+            due_day: new Date(transaction.occurred_at).getUTCDate(),
+            next_due_date: nextDueDate,
+          };
+
+          if (existing?.id) {
+            const { error: updateRecurringError } = await userClient
+              .from("recurring_expenses")
+              .update(payload)
+              .eq("id", existing.id);
+            if (updateRecurringError) throw new HttpError(500, "Failed to update recurring expense.", updateRecurringError);
+          } else {
+            const { error: insertRecurringError } = await userClient
+              .from("recurring_expenses")
+              .insert({ user_id: userId, ...payload, is_active: true });
+            if (insertRecurringError) throw new HttpError(500, "Failed to create recurring expense.", insertRecurringError);
+          }
+          recurringCount += 1;
+        }
+      }
+
       const { error: updateError } = await userClient
         .from("smart_capture_drafts")
         .update({ status: "confirmed", needs_review: false })
@@ -119,12 +208,14 @@ Deno.serve(async (req) => {
       metadata: {
         confirmed_count: confirmIds.length,
         ignored_count: ignoreIds.length,
+        recurring_count: recurringCount,
       },
     });
 
     return jsonResponse({
       confirmed_transactions: confirmedTransactions,
       ignored_ids: ignoreIds,
+      recurring_count: recurringCount,
     });
   } catch (error) {
     return errorResponse(error);

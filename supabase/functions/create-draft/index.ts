@@ -9,8 +9,25 @@ type CreateDraftRequest = {
   raw_subject?: string;
   source_reference?: string;
   default_currency?: string;
+  payment_method?: "cash" | "card" | "wallet" | "bank_transfer" | "unknown" | null;
   force_heuristic?: boolean;
 };
+
+function normalizeLabel(value: string | null | undefined): string {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function fuzzyMatches(left: string | null | undefined, right: string | null | undefined): boolean {
+  const a = normalizeLabel(left);
+  const b = normalizeLabel(right);
+  if (!a || !b) return false;
+  if (a.includes(b) || b.includes(a)) return true;
+  const aTokens = new Set(a.split(" ").filter((token) => token.length > 2));
+  const bTokens = b.split(" ").filter((token) => token.length > 2);
+  if (aTokens.size === 0 || bTokens.length === 0) return false;
+  const overlap = bTokens.filter((token) => aTokens.has(token)).length;
+  return overlap / Math.max(aTokens.size, bTokens.length) >= 0.6;
+}
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -34,6 +51,20 @@ Deno.serve(async (req) => {
       body.force_heuristic ?? false,
     );
 
+    const parsedPaymentMethod = body.payment_method ?? parsed.payment_method;
+    let suggestedRecurring = false;
+    if (parsed.transaction_type === "expense" && parsed.necessity === "fixed") {
+      const { data: recurringRows, error: recurringError } = await userClient
+        .from("recurring_expenses")
+        .select("label,category")
+        .eq("is_active", true);
+
+      if (recurringError) throw new HttpError(500, "Failed to check recurring expenses.", recurringError);
+
+      const candidate = `${parsed.merchant ?? ""} ${parsed.category ?? ""}`;
+      suggestedRecurring = !(recurringRows ?? []).some((row) => fuzzyMatches(candidate, `${row.label ?? ""} ${row.category ?? ""}`));
+    }
+
     const { data, error } = await userClient
       .from("smart_capture_drafts")
       .insert({
@@ -48,8 +79,9 @@ Deno.serve(async (req) => {
         parsed_category: parsed.category,
         parsed_kind: parsed.transaction_type,
         parsed_necessity: parsed.necessity,
-        parsed_payment_method: parsed.payment_method,
+        parsed_payment_method: parsedPaymentMethod,
         parsed_occurred_at: parsed.occurred_at,
+        suggested_recurring: suggestedRecurring,
         confidence: parsed.confidence,
         needs_review: parsed.needs_review,
         ai_notes: parsed.notes,

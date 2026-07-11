@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const DEFAULT_URL = "https://lzbtttgggoxumbcjqqsu.supabase.co";
 const DEFAULT_PUBLIC_KEY = "sb_publishable_v5pAWpqrnyLyEMlNeaZPAg_4xah6LqS";
 const CATEGORY_STORAGE_KEY = "ww_category_targets";
+const AUTOFILE_STORAGE_KEY = "ww_autofile_bills";
+const PLACEHOLDER_EXAMPLES = ["250 momo", "rent 4000", "skipped coffee 150", "paste your bank SMS here"];
 
 const CURRENCIES = [
   { code: "NPR", name: "Nepalese Rupee" },
@@ -81,26 +83,26 @@ const CATEGORY_GROUPS = [
   {
     name: "Bills",
     categories: [
-      { id: "rent-mortgage", label: "Rent/Mortgage", icon: "RM", amount: 18000 },
-      { id: "phone-internet", label: "Phone & Internet", icon: "PI", amount: 2500 },
-      { id: "utilities", label: "Utilities", icon: "UT", amount: 3500 },
+      { id: "rent-mortgage", label: "Rent/Mortgage", icon: "RM", amount: 0 },
+      { id: "phone-internet", label: "Phone & Internet", icon: "PI", amount: 0 },
+      { id: "utilities", label: "Utilities", icon: "UT", amount: 0 },
     ],
   },
   {
     name: "Needs",
     categories: [
-      { id: "groceries", label: "Groceries", icon: "GR", amount: 12000 },
-      { id: "transportation", label: "Transportation", icon: "TR", amount: 4500 },
-      { id: "medical-expenses", label: "Medical expenses", icon: "ME", amount: 2500 },
-      { id: "emergency-fund", label: "Emergency fund", icon: "EF", amount: 5000 },
+      { id: "groceries", label: "Groceries", icon: "GR", amount: 0 },
+      { id: "transportation", label: "Transportation", icon: "TR", amount: 0 },
+      { id: "medical-expenses", label: "Medical expenses", icon: "ME", amount: 0 },
+      { id: "emergency-fund", label: "Emergency fund", icon: "EF", amount: 0 },
     ],
   },
   {
     name: "Wants",
     categories: [
-      { id: "dining-out", label: "Dining out", icon: "DO", amount: 3500 },
-      { id: "entertainment", label: "Entertainment", icon: "EN", amount: 2500 },
-      { id: "vacation", label: "Vacation", icon: "VA", amount: 7000 },
+      { id: "dining-out", label: "Dining out", icon: "DO", amount: 0 },
+      { id: "entertainment", label: "Entertainment", icon: "EN", amount: 0 },
+      { id: "vacation", label: "Vacation", icon: "VA", amount: 0 },
     ],
   },
 ];
@@ -120,6 +122,9 @@ const state = {
   categoryBudgets: [],
   selectedCategoryId: "phone-internet",
   captureAttachment: null,
+  selectedPaymentMethod: null,
+  goalPhotoFile: null,
+  goalPhotoUrl: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -128,8 +133,9 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 const els = {
   alert: $("#alert"),
   sessionLabel: $("#sessionLabel"),
+  sessionPill: $("#sessionPill"),
   viewTitle: $("#viewTitle"),
-  sidePending: $("#sidePending"),
+  reviewBadge: $("#reviewBadge"),
   nightlyLine: $("#nightlyLine"),
   reviewLine: $("#reviewLine"),
   locationLine: $("#locationLine"),
@@ -150,6 +156,8 @@ const els = {
   captureRings: $("#captureRings"),
   statsRings: $("#statsRings"),
   ringCenterValue: $("#ringCenterValue"),
+  ringCenterLabel: $("#ringCenterLabel"),
+  ringCenterHint: $("#ringCenterHint"),
   statsCenterValue: $("#statsCenterValue"),
   budgetMonth: $("#budgetMonth"),
   incomeTotalValue: $("#incomeTotalValue"),
@@ -243,31 +251,41 @@ function defaultCategoryBudgets() {
 }
 
 function loadCategoryBudgets() {
-  const defaults = defaultCategoryBudgets();
-  let saved = [];
-  try {
-    saved = JSON.parse(localStorage.getItem(CATEGORY_STORAGE_KEY) || "[]");
-  } catch (_error) {
-    saved = [];
-  }
-
-  const savedById = new Map(
-    saved
-      .flatMap((group) => group.categories || [])
-      .map((category) => [category.id, Number(category.amount)]),
-  );
-
-  return defaults.map((group) => ({
-    ...group,
-    categories: group.categories.map((category) => ({
-      ...category,
-      amount: savedById.has(category.id) ? Number(savedById.get(category.id)) : category.amount,
-    })),
-  }));
+  return defaultCategoryBudgets();
 }
 
 function saveCategoryBudgets() {
   localStorage.setItem(CATEGORY_STORAGE_KEY, JSON.stringify(state.categoryBudgets));
+}
+
+function categoryIdFromLabel(label) {
+  const normalized = normalizeText(label);
+  const known = allCategories().find((category) => normalized.includes(normalizeText(category.label)) || normalizeText(category.label).includes(normalized));
+  if (known) return known.id;
+  if (/\b(rent|mortgage)\b/.test(normalized)) return "rent-mortgage";
+  if (/\b(phone|internet|wifi)\b/.test(normalized)) return "phone-internet";
+  if (/\b(electric|water|utility|utilities)\b/.test(normalized)) return "utilities";
+  if (/\b(grocery|groceries|food)\b/.test(normalized)) return "groceries";
+  if (/\b(bus|taxi|fuel|transport)\b/.test(normalized)) return "transportation";
+  if (/\b(medical|doctor|pharmacy|health)\b/.test(normalized)) return "medical-expenses";
+  if (/\b(emergency)\b/.test(normalized)) return "emergency-fund";
+  if (/\b(dining|restaurant|coffee|momo)\b/.test(normalized)) return "dining-out";
+  if (/\b(entertainment|movie|game)\b/.test(normalized)) return "entertainment";
+  if (/\b(vacation|trip|travel)\b/.test(normalized)) return "vacation";
+  return "utilities";
+}
+
+function syncCategoryBudgetsFromRecurring() {
+  state.categoryBudgets = defaultCategoryBudgets();
+  for (const item of state.recurringExpenses) {
+    const categoryId = categoryIdFromLabel(`${item.category || ""} ${item.label || ""}`);
+    for (const group of state.categoryBudgets) {
+      const category = group.categories.find((entry) => entry.id === categoryId);
+      if (category) category.amount += Number(item.amount || 0);
+    }
+  }
+  const firstFunded = allCategories().find((category) => Number(category.amount) > 0);
+  state.selectedCategoryId = firstFunded?.id || "rent-mortgage";
 }
 
 function allCategories() {
@@ -357,7 +375,7 @@ function normalizeText(value) {
 }
 
 function displayLocation() {
-  const timezone = state.profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Katmandu";
+  const timezone = state.profile?.timezone || detectedTimezone();
   const place = timezone.split("/").pop().replaceAll("_", " ").replace("Katmandu", "Kathmandu");
   const localDate = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: timezone }).format(new Date());
   return `${place} local day, ${localDate}`;
@@ -386,7 +404,8 @@ async function loadSession() {
 
 function renderSession() {
   const email = state.session?.user?.email;
-  els.sessionLabel.textContent = email ? `Signed in as ${email}` : "Not connected";
+  els.sessionLabel.textContent = email ? email.replace(/(.{18}).+(@.*)/, "$1...$2") : "Demo mode";
+  els.sessionPill?.classList.toggle("connected", Boolean(email));
   $("#signOutBtn").classList.toggle("hidden", !email);
 }
 
@@ -451,9 +470,9 @@ async function loadProfile() {
 
 function detectedTimezone() {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Katmandu";
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   } catch (_error) {
-    return "Asia/Katmandu";
+    return "UTC";
   }
 }
 
@@ -497,7 +516,29 @@ async function loadGoal() {
     .maybeSingle();
   if (error) throw error;
   state.goal = data;
+  await loadGoalPhotoUrl();
   renderGoal();
+}
+
+async function loadGoalPhotoUrl() {
+  state.goalPhotoUrl = null;
+  if (!state.goal?.photo_path || !state.supabase) return;
+  const { data } = await state.supabase.storage
+    .from("goal-photos")
+    .createSignedUrl(state.goal.photo_path, 3600);
+  state.goalPhotoUrl = data?.signedUrl || null;
+}
+
+async function uploadGoalPhoto(file) {
+  const userId = state.session?.user?.id;
+  if (!userId || !file) return null;
+  const extension = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${userId}/${Date.now()}.${extension}`;
+  const { error } = await requireClient().storage
+    .from("goal-photos")
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (error) throw error;
+  return path;
 }
 
 async function loadIncomeSources() {
@@ -526,13 +567,14 @@ async function saveGoal() {
   const userId = state.session?.user?.id;
   if (!userId) throw new Error("Sign in first.");
 
-  const name = $("#goalName").value.trim();
-  const amount = Number($("#goalAmount").value);
-  const code = currency($("#goalCurrency").value || state.profile?.default_currency || "NPR");
+  const name = ($("#modalGoalName")?.value || $("#goalName").value).trim();
+  const amount = Number($("#modalGoalAmount")?.value || $("#goalAmount").value);
+  const code = currency($("#modalGoalCurrency")?.value || $("#goalCurrency").value || state.profile?.default_currency || "NPR");
   if (!name || !amount) throw new Error("Goal name and target amount are required.");
+  const photoPath = state.goalPhotoFile ? await uploadGoalPhoto(state.goalPhotoFile) : ($("#goalPhotoPath")?.value || state.goal?.photo_path || null);
 
   if (state.goal?.id) {
-    const { error } = await requireClient().from("goals").update({ name, target_amount: amount, currency: code }).eq("id", state.goal.id);
+    const { error } = await requireClient().from("goals").update({ name, target_amount: amount, currency: code, photo_path: photoPath }).eq("id", state.goal.id);
     if (error) throw error;
   } else {
     const { error } = await requireClient().from("goals").insert({
@@ -540,6 +582,7 @@ async function saveGoal() {
       name,
       target_amount: amount,
       currency: code,
+      photo_path: photoPath,
       current_saved_amount: 0,
       is_active: true,
     });
@@ -547,6 +590,8 @@ async function saveGoal() {
   }
 
   await loadGoal();
+  closeGoalModal();
+  state.goalPhotoFile = null;
   showAlert("Goal saved.");
 }
 
@@ -603,7 +648,15 @@ function renderGoal() {
   const goal = state.goal;
   if (!goal) {
     els.goalStatus.textContent = "No active goal";
-    els.goalPreview.innerHTML = "<p class=\"draft-meta\">Create a Rival goal in Expense and Income to make flexible spending visible.</p>";
+    els.goalPreview.innerHTML = `
+      <div class="goal-empty-card">
+        <strong>Choose one thing worth protecting.</strong>
+        <p class="draft-meta">Give it a name, a number, and a photo. Flexible spending will show its impact here.</p>
+        <button id="openGoalModalInline" type="button"><i data-lucide="target"></i><span>Create Rival goal</span></button>
+      </div>
+    `;
+    $("#openGoalModalInline")?.addEventListener("click", openGoalModal);
+    if (window.lucide) window.lucide.createIcons();
     renderFinanceRings();
     return;
   }
@@ -611,15 +664,36 @@ function renderGoal() {
   $("#goalName").value = goal.name || "";
   $("#goalAmount").value = goal.target_amount || "";
   populateCurrencySelect("goalCurrency", goal.currency || "NPR");
+  populateCurrencySelect("modalGoalCurrency", goal.currency || state.profile?.default_currency || "NPR");
 
   const percent = goal.target_amount ? pct((Number(goal.current_saved_amount || 0) / Number(goal.target_amount)) * 100) : 0;
   els.goalStatus.textContent = `${percent.toFixed(1)}% funded`;
+  const photo = state.goalPhotoUrl
+    ? `<img class="goal-photo" src="${escapeAttr(state.goalPhotoUrl)}" alt="">`
+    : `<div class="goal-photo">${escapeHtml((goal.name || "G").slice(0, 1).toUpperCase())}</div>`;
   els.goalPreview.innerHTML = `
-    <div class="goal-row"><strong>${escapeHtml(goal.name)}</strong><span>${money(goal.target_amount, goal.currency)}</span></div>
-    <div class="progress"><span style="width:${percent}%"></span></div>
-    <div class="draft-meta">${money(goal.current_saved_amount || 0, goal.currency)} already set aside</div>
+    <div class="goal-card">
+      ${photo}
+      <div class="goal-preview">
+        <div class="goal-row"><strong>${escapeHtml(goal.name)}</strong><span>${percent.toFixed(1)}%</span></div>
+        <div class="progress"><span style="width:${percent}%"></span></div>
+        <div class="draft-meta">${money(goal.current_saved_amount || 0, goal.currency)} protected</div>
+      </div>
+    </div>
   `;
   renderFinanceRings();
+}
+
+function openGoalModal() {
+  populateCurrencySelect("modalGoalCurrency", state.profile?.default_currency || state.goal?.currency || "NPR");
+  $("#modalGoalName").value = state.goal?.name || "";
+  $("#modalGoalAmount").value = state.goal?.target_amount || "";
+  $("#modalGoalPhotoName").classList.toggle("hidden", !state.goalPhotoFile);
+  $("#goalModal").classList.remove("hidden");
+}
+
+function closeGoalModal() {
+  $("#goalModal")?.classList.add("hidden");
 }
 
 function renderIncomeSources() {
@@ -637,6 +711,7 @@ function renderIncomeSources() {
 
 function renderRecurringExpenses() {
   if (!els.recurringList) return;
+  syncCategoryBudgetsFromRecurring();
   els.recurringList.innerHTML = state.recurringExpenses.length
     ? state.recurringExpenses.map((item) => `
       <div class="mini-row">
@@ -644,7 +719,8 @@ function renderRecurringExpenses() {
         <span>${money(item.amount, item.currency)} due ${escapeHtml(item.next_due_date || "soon")}</span>
       </div>
     `).join("")
-    : "<p class=\"draft-meta\">No fixed expenses yet.</p>";
+    : "<p class=\"draft-meta\">Your bills will file themselves here as you log them, or add one manually.</p>";
+  renderBudgetPlan();
 }
 
 function renderBudgetPlan() {
@@ -658,6 +734,13 @@ function renderBudgetPlan() {
   els.budgetMonth.textContent = monthLabel;
   els.incomeTotalValue.textContent = compactMoney(incomeTotal, code);
   els.assignedLine.textContent = `${compactMoney(assignedTotal, code)} assigned`;
+
+  if (!state.recurringExpenses.length) {
+    els.categoryGroups.innerHTML = "<section class=\"empty-panel\"><p class=\"draft-meta\">Your bills will file themselves here as you log them, or add one manually.</p></section>";
+    renderTargetPanel(selected, code);
+    renderStatsBreakdown(code);
+    return;
+  }
 
   els.categoryGroups.innerHTML = state.categoryBudgets.map((group) => `
     <section class="category-group">
@@ -686,35 +769,32 @@ function renderTargetPanel(category, code) {
   if (!category || !els.targetSlider) return;
   const spent = categorySpent(category);
   const amount = Number(category.amount || 0);
-  const remaining = Math.max(amount - spent, 0);
   const progress = amount ? pct((spent / amount) * 100) : 0;
 
   els.targetTitle.textContent = category.label;
   els.targetGroup.textContent = category.group;
   els.targetIcon.textContent = category.icon;
   els.targetAmountValue.textContent = compactMoney(amount, code);
-  els.targetHint.textContent = `${category.group} target`;
+  els.targetHint.textContent = "Monthly amount";
   els.targetSlider.value = String(amountToRaw(amount));
   els.targetSlider.style.setProperty("--fill", sliderFillPercent(amount));
-  els.targetSpentValue.textContent = compactMoney(spent, code);
-  els.targetRemainingValue.textContent = compactMoney(remaining, code);
+  els.targetSpentValue.textContent = compactMoney(amount, code);
+  els.targetRemainingValue.textContent = compactMoney(spent, code);
   els.targetProgressBar.style.width = `${progress}%`;
 }
 
 function renderStatsBreakdown(code = currency(state.profile?.default_currency || state.goal?.currency || "NPR")) {
   if (!els.statsCategoryList) return;
-  const budget = categoryBudgetTotal();
   const expense = currentExpenseTotal();
-  const remaining = Math.max(budget - expense, 0);
 
-  els.statsBudgetStatus.textContent = `${compactMoney(remaining, code)} left`;
+  els.statsBudgetStatus.textContent = `${compactMoney(expense, code)} flexible so far`;
   els.statsCategoryList.innerHTML = allCategories().map((category) => {
     const spent = categorySpent(category);
     const progress = category.amount ? pct((spent / Number(category.amount)) * 100) : 0;
     return `
       <div class="stats-category-row">
         <strong>${escapeHtml(category.label)}</strong>
-        <span>${compactMoney(spent, code)} / ${compactMoney(category.amount, code)}</span>
+        <span>${compactMoney(category.amount, code)} monthly</span>
         <div class="progress"><span style="width:${progress}%"></span></div>
       </div>
     `;
@@ -722,17 +802,18 @@ function renderStatsBreakdown(code = currency(state.profile?.default_currency ||
 }
 
 async function createDraft(source, rawText, subject = null, sourceReference = null) {
-  if (!rawText.trim()) throw new Error("Add transaction text first.");
+  if (!rawText.trim()) throw new Error("Couldn't quite catch that. Try adding an amount, like '250 momo'.");
   const data = await invoke("create-draft", {
     source,
     raw_text: rawText,
     raw_subject: subject,
     source_reference: sourceReference,
     default_currency: state.profile?.default_currency || state.goal?.currency || "NPR",
+    payment_method: state.selectedPaymentMethod,
   });
-  showAlert(`Draft created via ${data.draft?.model || "parser"}.`);
+  showAlert("Nice, saved for tonight's review.");
   await nightlyReview(false);
-  switchView("review");
+  pulseRing();
   return data;
 }
 
@@ -760,7 +841,7 @@ async function uploadCaptureAttachment(file) {
 async function quickLogDraft() {
   const rawTextInput = $("#captureInput").value.trim();
   const file = state.captureAttachment;
-  if (!rawTextInput && !file) throw new Error("Describe the spend, attach a photo, or both.");
+  if (!rawTextInput && !file) throw new Error("Couldn't quite catch that. Try adding an amount, like '250 momo'.");
 
   const sourceReference = file ? await uploadCaptureAttachment(file) : null;
   const rawText = rawTextInput || `Attached ${file.name}. Needs review, no description given.`;
@@ -785,14 +866,17 @@ async function parsePreview() {
 async function nightlyReview(queueNotification) {
   const data = await invoke("nightly-review", {
     review_date: today(),
-    timezone: state.profile?.timezone || "Asia/Katmandu",
+    timezone: state.profile?.timezone || detectedTimezone(),
     queue_notification: queueNotification,
   });
   state.drafts = data.drafts || [];
   state.pendingCount = data.pending_count || 0;
-  els.nightlyLine.textContent = data.notification?.full_text || "Close today.";
-  els.reviewLine.textContent = data.notification?.full_text || "Review tonight.";
-  els.sidePending.textContent = String(state.pendingCount);
+  els.nightlyLine.textContent = data.notification?.full_text || "No captured transactions yet.";
+  els.reviewLine.textContent = data.notification?.full_text || "Nothing to review yet, log something today and it'll wait for you here.";
+  if (els.reviewBadge) {
+    els.reviewBadge.textContent = String(state.pendingCount);
+    els.reviewBadge.classList.toggle("hidden", state.pendingCount === 0);
+  }
   if (data.goal) state.goal = data.goal;
   renderGoal();
   renderNudge(data.notification);
@@ -802,7 +886,7 @@ async function nightlyReview(queueNotification) {
 async function generateRecurringDrafts({ silent = false } = {}) {
   const data = await invoke("generate-recurring-drafts", {
     due_date: today(),
-    timezone: state.profile?.timezone || "Asia/Katmandu",
+    timezone: state.profile?.timezone || detectedTimezone(),
   });
   if (!silent) {
     showAlert(`${data.created_count || 0} fixed card${data.created_count === 1 ? "" : "s"} created.`);
@@ -812,15 +896,22 @@ async function generateRecurringDrafts({ silent = false } = {}) {
 }
 
 function draftEditValue(id, field) {
-  const element = document.querySelector(`[data-draft="${id}"][data-field="${field}"]`);
+  const element = field === "create_recurring"
+    ? document.querySelector(`[data-draft="${id}"][data-field="${field}"]:checked`)
+    : document.querySelector(`[data-draft="${id}"][data-field="${field}"]`);
   if (!element) return undefined;
   if (field === "amount") return Number(element.value);
   if (field === "is_skipped_opportunity") return element.checked;
+  if (field === "create_recurring") return element.value === "true";
   return element.value;
 }
 
 function selectedDraftIds() {
   return $$(".draft-select:checked").map((item) => item.value);
+}
+
+function isAutoFileBillsEnabled() {
+  return localStorage.getItem(AUTOFILE_STORAGE_KEY) !== "false";
 }
 
 async function confirmSelected() {
@@ -837,13 +928,15 @@ async function confirmSelected() {
       necessity: draftEditValue(id, "necessity"),
       payment_method: draftEditValue(id, "payment_method"),
       is_skipped_opportunity: draftEditValue(id, "is_skipped_opportunity"),
+      create_recurring: Boolean(draftEditValue(id, "create_recurring")),
     };
   }
 
   const data = await invoke("confirm-drafts", { confirm_ids: ids, edits });
   state.lastConfirmations = data.confirmed_transactions || [];
   renderConfirmations();
-  showAlert(`${ids.length} draft${ids.length === 1 ? "" : "s"} confirmed.`);
+  showAlert(data.recurring_count > 0 ? "Rent will be waiting for you next month." : `${ids.length} draft${ids.length === 1 ? "" : "s"} confirmed.`);
+  if (data.recurring_count > 0) await loadRecurringExpenses();
   await nightlyReview(false);
 }
 
@@ -860,13 +953,13 @@ async function ignoreSelected() {
 async function closeDay() {
   const data = await invoke("close-day", {
     report_date: today(),
-    timezone: state.profile?.timezone || "Asia/Katmandu",
+    timezone: state.profile?.timezone || detectedTimezone(),
   });
   state.report = data.report;
   state.streak = data.streak;
   renderReport();
   switchView("stats");
-  showAlert("Day closed.");
+  showAlert(`Day closed. See you tomorrow.${state.streak?.current_count ? ` ${state.streak.current_count}-day streak.` : ""}`);
 }
 
 function renderNudge(notification) {
@@ -879,8 +972,12 @@ function renderNudge(notification) {
 }
 
 function renderDrafts() {
+  if (els.reviewBadge) {
+    els.reviewBadge.textContent = String(state.pendingCount || state.drafts.length);
+    els.reviewBadge.classList.toggle("hidden", (state.pendingCount || state.drafts.length) === 0);
+  }
   if (!state.drafts.length) {
-    els.draftList.innerHTML = "<section class=\"panel empty-panel\"><p class=\"draft-meta\">No pending drafts for today.</p></section>";
+    els.draftList.innerHTML = "<section class=\"panel empty-panel\"><p class=\"draft-meta\">Nothing to review yet, log something today and it'll wait for you here.</p></section>";
     return;
   }
 
@@ -889,6 +986,7 @@ function renderDrafts() {
     const code = draft.parsed_currency || state.profile?.default_currency || "NPR";
     const title = draft.parsed_merchant || draft.parsed_category || "Possible transaction";
     const confidence = Math.round(Number(draft.confidence || 0) * 100);
+    const showRecurringSuggestion = Boolean(draft.suggested_recurring && isAutoFileBillsEnabled());
     return `
       <article class="draft-card" data-card="${draft.id}">
         <div class="draft-main">
@@ -909,6 +1007,13 @@ function renderDrafts() {
           })}
         </div>
         ${draft.source === "screenshot" && draft.source_reference ? `<div class="receipt-slot" data-receipt="${draft.id}"></div>` : ""}
+        ${showRecurringSuggestion ? `
+          <div class="bill-suggestion">
+            <span class="bill-tag">Bill?</span>
+            <label class="recurring-choice"><input data-draft="${draft.id}" data-field="create_recurring" type="radio" name="recurring-${draft.id}" value="false" checked><span>Just this once</span></label>
+            <label class="recurring-choice"><input data-draft="${draft.id}" data-field="create_recurring" type="radio" name="recurring-${draft.id}" value="true"><span>Track monthly</span></label>
+          </div>
+        ` : ""}
         <div class="draft-edit">
           <input data-draft="${draft.id}" data-field="amount" value="${escapeAttr(amount)}" type="number" min="0.01" step="0.01" aria-label="Amount">
           <select data-draft="${draft.id}" data-field="currency" aria-label="Currency">${currencyOptionsHtml(code)}</select>
@@ -1032,22 +1137,39 @@ function renderReport() {
 }
 
 function renderFinanceRings() {
-  const code = currency(state.report?.currency || state.profile?.default_currency || state.goal?.currency || "NPR");
-  const budget = categoryBudgetTotal();
-  const expense = currentExpenseTotal();
-  const remaining = Math.max(budget - expense, 0);
-  const expensePercent = budget ? pct((expense / budget) * 100) : 0;
-  const remainingPercent = budget ? pct((remaining / budget) * 100) : 0;
-  const budgetPercent = budget ? 100 : 0;
+  const confirmedCount = state.lastConfirmations.length;
+  const pendingCount = state.pendingCount || state.drafts.length;
+  const closedToday = Boolean(state.report?.report_date === today() || state.report?.date === today());
+  const closePercent = closedToday ? 100 : confirmedCount + pendingCount > 0 ? pct((confirmedCount / (confirmedCount + pendingCount)) * 100) : 0;
+  const goalPercentValue = state.goal?.target_amount ? pct((Number(state.goal.current_saved_amount || 0) / Number(state.goal.target_amount)) * 100) : 0;
+  const pacePercent = state.lastConfirmations.length >= 7 ? pct((currentExpenseTotal() / Math.max(1, categoryBudgetTotal())) * 100) : 0;
 
   if (els.locationLine) els.locationLine.textContent = displayLocation();
-  setAppleRing(els.captureRings, { budget: budgetPercent, expense: expensePercent, remaining: remainingPercent });
-  setAppleRing(els.statsRings, { budget: budgetPercent, expense: expensePercent, remaining: remainingPercent });
+  setAppleRing(els.captureRings, { budget: closePercent, expense: goalPercentValue, remaining: pacePercent });
+  setAppleRing(els.statsRings, { budget: closePercent, expense: goalPercentValue, remaining: pacePercent });
 
-  if (els.ringCenterValue) els.ringCenterValue.textContent = money(budget, code);
-  if (els.statsCenterValue) els.statsCenterValue.textContent = money(remaining, code);
+  if (els.ringCenterLabel && els.ringCenterValue && els.ringCenterHint) {
+    if (pendingCount > 0) {
+      els.ringCenterLabel.textContent = String(pendingCount);
+      els.ringCenterValue.textContent = "drafts waiting";
+      els.ringCenterHint.textContent = "tap to review tonight";
+    } else if (closedToday) {
+      els.ringCenterLabel.textContent = "Day closed";
+      els.ringCenterValue.textContent = "check";
+      els.ringCenterHint.textContent = state.streak?.current_count ? `${state.streak.current_count}-day streak` : "see you tomorrow";
+    } else if (state.session && state.goal) {
+      els.ringCenterLabel.textContent = state.goal.name || "Goal";
+      els.ringCenterValue.textContent = `${goalPercentValue.toFixed(0)}% protected`;
+      els.ringCenterHint.textContent = "toward it";
+    } else {
+      els.ringCenterLabel.textContent = "Ready";
+      els.ringCenterValue.textContent = "when you are";
+      els.ringCenterHint.textContent = "log today's first spend";
+    }
+  }
+  if (els.statsCenterValue) els.statsCenterValue.textContent = closedToday ? "closed" : "today";
 
-  renderStatsBreakdown(code);
+  renderStatsBreakdown();
 }
 
 function setAppleRing(element, values) {
@@ -1055,6 +1177,15 @@ function setAppleRing(element, values) {
   element.style.setProperty("--budget-ring-value", `${pct(values.budget)}%`);
   element.style.setProperty("--expense-ring-value", `${pct(values.expense)}%`);
   element.style.setProperty("--remaining-ring-value", `${pct(values.remaining)}%`);
+}
+
+function pulseRing() {
+  if (!els.captureRings) return;
+  els.captureRings.classList.remove("pulse");
+  window.requestAnimationFrame(() => {
+    els.captureRings.classList.add("pulse");
+    window.setTimeout(() => els.captureRings?.classList.remove("pulse"), 700);
+  });
 }
 
 function renderAll() {
@@ -1113,18 +1244,76 @@ async function guard(action) {
     await action();
     if (window.lucide) window.lucide.createIcons();
   } catch (error) {
-    showAlert(error.message || "Something went wrong.", "error");
+    const message = error.message || "";
+    const friendly = /fetch|network|failed|functions|auth|jwt|supabase/i.test(message)
+      ? "Can't reach your data right now. Your text is safe here, try again in a moment."
+      : message || "Something needs attention. Please check the highlighted fields and try again.";
+    showAlert(friendly, "error");
+  }
+}
+
+function setupCaptureInteractions() {
+  const input = $("#captureInput");
+  let placeholderIndex = 0;
+  let placeholderPaused = false;
+  window.setInterval(() => {
+    if (!input || placeholderPaused || input.value) return;
+    placeholderIndex = (placeholderIndex + 1) % PLACEHOLDER_EXAMPLES.length;
+    input.placeholder = PLACEHOLDER_EXAMPLES[placeholderIndex];
+  }, 4000);
+  input?.addEventListener("focus", () => { placeholderPaused = true; });
+  input?.addEventListener("blur", () => { placeholderPaused = false; });
+
+  const autoFile = $("#autoFileBills");
+  if (autoFile) {
+    autoFile.checked = isAutoFileBillsEnabled();
+    autoFile.addEventListener("change", () => {
+      localStorage.setItem(AUTOFILE_STORAGE_KEY, String(autoFile.checked));
+      renderDrafts();
+    });
+  }
+
+  $$(".method-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const method = chip.dataset.paymentMethod;
+      state.selectedPaymentMethod = state.selectedPaymentMethod === method ? null : method;
+      $$(".method-chip").forEach((item) => item.classList.toggle("selected", item.dataset.paymentMethod === state.selectedPaymentMethod));
+    });
+  });
+
+  if (new URLSearchParams(window.location.search).get("debug") === "1") {
+    $("#parseBtn")?.classList.remove("hidden");
   }
 }
 
 function bindEvents() {
   $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   $$(".money-tab").forEach((button) => button.addEventListener("click", () => switchMoneyTab(button.dataset.moneyTab)));
+  $("#sessionPill").addEventListener("click", () => {
+    if (!state.session) switchView("money");
+  });
+  $("#captureRings").addEventListener("click", () => {
+    if (state.pendingCount > 0) switchView("review");
+  });
+  $("#captureRings").addEventListener("keydown", (event) => {
+    if ((event.key === "Enter" || event.key === " ") && state.pendingCount > 0) {
+      event.preventDefault();
+      switchView("review");
+    }
+  });
   $("#saveConfigBtn").addEventListener("click", () => guard(saveConfig));
   $("#signInBtn").addEventListener("click", () => guard(signIn));
   $("#signUpBtn").addEventListener("click", () => guard(signUp));
   $("#signOutBtn").addEventListener("click", () => guard(signOut));
   $("#saveGoalBtn").addEventListener("click", () => guard(saveGoal));
+  $("#modalSaveGoalBtn").addEventListener("click", () => guard(saveGoal));
+  $("#closeGoalModalBtn").addEventListener("click", closeGoalModal);
+  $("#modalGoalPhotoBtn").addEventListener("click", () => $("#modalGoalPhoto").click());
+  $("#modalGoalPhoto").addEventListener("change", (event) => {
+    state.goalPhotoFile = event.target.files?.[0] || null;
+    $("#modalGoalPhotoName").textContent = state.goalPhotoFile?.name || "";
+    $("#modalGoalPhotoName").classList.toggle("hidden", !state.goalPhotoFile);
+  });
   $("#saveProfileBtn").addEventListener("click", () => guard(saveProfileCurrency));
   $("#saveIncomeBtn").addEventListener("click", () => guard(saveIncomeSource));
   $("#saveRecurringBtn").addEventListener("click", () => guard(saveRecurringExpense));
@@ -1190,6 +1379,8 @@ initClient();
 state.categoryBudgets = loadCategoryBudgets();
 refreshCurrencyDefaults();
 populateCurrencySelect("goalCurrency", "NPR");
+populateCurrencySelect("modalGoalCurrency", "NPR");
+setupCaptureInteractions();
 bindEvents();
 renderAll();
 loadSession().catch((error) => showAlert(error.message || "Could not load session.", "error"));

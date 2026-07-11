@@ -22,20 +22,15 @@
         <nav class="nav" aria-label="Primary">
           <button class="nav-item active" data-view="capture"><i data-lucide="sparkles"></i><span>Capture</span></button>
           <button class="nav-item" data-view="money"><i data-lucide="sliders-horizontal"></i><span>Expense and Income</span></button>
-          <button class="nav-item" data-view="review"><i data-lucide="inbox"></i><span>Review</span></button>
+          <button class="nav-item" data-view="review"><i data-lucide="inbox"></i><span>Review</span><strong id="reviewBadge" class="nav-badge hidden">0</strong></button>
           <button class="nav-item" data-view="stats"><i data-lucide="line-chart"></i><span>Stats</span></button>
         </nav>
-
-        <div class="side-stat">
-          <span>Pending</span>
-          <strong id="sidePending">0</strong>
-        </div>
       </aside>
 
       <section class="workspace">
         <header class="topbar">
           <div>
-            <p id="sessionLabel" class="eyebrow">Not connected</p>
+            <button id="sessionPill" class="status-pill" type="button"><span class="status-dot"></span><span id="sessionLabel">Demo mode</span></button>
             <h2 id="viewTitle">Smart Capture</h2>
           </div>
           <div class="top-actions">
@@ -57,38 +52,49 @@
           <div class="finance-hero">
             <section class="apple-ring-panel">
               <div class="location-chip"><i data-lucide="map-pin"></i><span id="locationLine">Local day</span></div>
-              <div id="captureRings" class="apple-rings" aria-label="Budget, expense, and remaining rings">
+              <div id="captureRings" class="apple-rings" aria-label="Close the day, goal, and pace rings" role="button" tabindex="0">
                 <div class="apple-ring apple-ring-budget"></div>
                 <div class="apple-ring apple-ring-expense"></div>
                 <div class="apple-ring apple-ring-remaining"></div>
                 <div class="apple-ring-core">
-                  <span>Budget</span>
-                  <strong id="ringCenterValue">NPR 0</strong>
+                  <span id="ringCenterLabel">Ready</span>
+                  <strong id="ringCenterValue">when you are</strong>
+                  <small id="ringCenterHint">log today's first spend</small>
                 </div>
               </div>
               <div class="ring-legend">
-                <span><i class="legend-dot budget"></i>Budget</span>
-                <span><i class="legend-dot expense"></i>Expense</span>
-                <span><i class="legend-dot remaining"></i>Remaining</span>
+                <span><i class="legend-dot budget"></i>Close the day</span>
+                <span><i class="legend-dot expense"></i>Goal</span>
+                <span><i class="legend-dot remaining"></i>Pace</span>
               </div>
             </section>
 
             <section class="panel quick-log-panel" id="smartCapturePanel">
               <div class="section-head">
-                <h3>Smart Capture</h3>
+                <div>
+                  <h3>Drop a money clue</h3>
+                  <p class="soft-line">Type it, paste a bank message, or attach a receipt. Drafts only, you approve everything tonight.</p>
+                </div>
                 <button id="nightlyBtn" class="ghost"><i data-lucide="moon"></i><span>Nightly Review</span></button>
               </div>
               <p class="soft-line" id="nightlyLine">No captured transactions yet.</p>
-              <textarea id="captureInput" placeholder="Paid NPR 250 at Momo Ghar via wallet"></textarea>
+              <textarea id="captureInput" placeholder="250 momo"></textarea>
+              <div class="chip-row" role="group" aria-label="Payment method">
+                <button class="method-chip" data-payment-method="cash" type="button"><i data-lucide="banknote"></i><span>Cash</span></button>
+                <button class="method-chip" data-payment-method="card" type="button"><i data-lucide="credit-card"></i><span>Card</span></button>
+                <button class="method-chip" data-payment-method="wallet" type="button"><i data-lucide="wallet"></i><span>Wallet</span></button>
+              </div>
               <div class="attach-row">
                 <input id="captureAttachment" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" class="hidden">
-                <button id="attachBtn" type="button" class="ghost"><i data-lucide="paperclip"></i><span>Attach a photo</span></button>
+                <button id="attachBtn" type="button" class="ghost"><i data-lucide="paperclip"></i><span>Attach receipt</span></button>
                 <span id="attachName" class="attach-name hidden"></span>
                 <button id="attachClearBtn" type="button" class="ghost icon-button hidden"><i data-lucide="x"></i></button>
               </div>
+              <p class="hint">A screenshot of a bank alert works too.</p>
+              <label class="autofile-toggle"><input id="autoFileBills" type="checkbox" checked><span>Auto-file bills</span></label>
               <div class="button-row">
-                <button id="createDraftBtn"><i data-lucide="plus"></i><span>Create Draft</span></button>
-                <button id="parseBtn" class="secondary"><i data-lucide="scan-text"></i><span>Parse</span></button>
+                <button id="createDraftBtn"><i data-lucide="plus"></i><span>Save clue</span></button>
+                <button id="parseBtn" class="secondary debug-only hidden"><i data-lucide="scan-text"></i><span>Parse</span></button>
               </div>
             </section>
           </div>
@@ -152,8 +158,8 @@
                   <input id="targetSlider" type="range" min="0" max="1000" step="1">
                 </label>
                 <div class="target-stats">
-                  <div><span>Spent</span><strong id="targetSpentValue">NPR 0</strong></div>
-                  <div><span>Left</span><strong id="targetRemainingValue">NPR 0</strong></div>
+                  <div><span>Monthly amount</span><strong id="targetSpentValue">NPR 0</strong></div>
+                  <div><span>Filed bills</span><strong id="targetRemainingValue">NPR 0</strong></div>
                 </div>
                 <div class="progress target-progress"><span id="targetProgressBar"></span></div>
               </aside>
@@ -205,6 +211,7 @@
               <label>Goal name<input id="goalName" placeholder="Pokhara Trip"></label>
               <label>Target amount<input id="goalAmount" type="number" min="1" placeholder="25000"></label>
               <label>Currency<select id="goalCurrency"></select></label>
+              <input id="goalPhotoPath" type="hidden">
               <button id="saveGoalBtn"><i data-lucide="target"></i><span>Save Goal</span></button>
             </section>
 
@@ -254,8 +261,8 @@
                 <div class="apple-ring apple-ring-expense"></div>
                 <div class="apple-ring apple-ring-remaining"></div>
                 <div class="apple-ring-core">
-                  <span>Left</span>
-                  <strong id="statsCenterValue">NPR 0</strong>
+                  <span>Close</span>
+                  <strong id="statsCenterValue">today</strong>
                 </div>
               </div>
             </section>
@@ -293,14 +300,31 @@
 
           <section class="panel stats-breakdown">
             <div class="section-head">
-              <h3>Budget Targets</h3>
-              <span class="pill" id="statsBudgetStatus">NPR 0 left</span>
+              <h3>Monthly Targets</h3>
+              <span class="pill" id="statsBudgetStatus">NPR 0 flexible so far</span>
             </div>
             <div id="statsCategoryList" class="stats-category-list"></div>
           </section>
         </section>
       </section>
     </main>
+    <div id="goalModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="goalModalTitle">
+      <section class="panel modal-panel">
+        <div class="section-head">
+          <h3 id="goalModalTitle">Create Rival goal</h3>
+          <button id="closeGoalModalBtn" class="ghost icon-button" type="button" aria-label="Close goal setup"><i data-lucide="x"></i></button>
+        </div>
+        <label>Name<input id="modalGoalName" placeholder="Pokhara trip"></label>
+        <label>Target amount<input id="modalGoalAmount" type="number" min="1" placeholder="25000"></label>
+        <label>Currency<select id="modalGoalCurrency"></select></label>
+        <div class="attach-row">
+          <input id="modalGoalPhoto" type="file" accept="image/jpeg,image/png,image/webp" class="hidden">
+          <button id="modalGoalPhotoBtn" class="ghost" type="button"><i data-lucide="image-plus"></i><span>Add photo</span></button>
+          <span id="modalGoalPhotoName" class="attach-name hidden"></span>
+        </div>
+        <button id="modalSaveGoalBtn" type="button"><i data-lucide="target"></i><span>Protect it</span></button>
+      </section>
+    </div>
 
     <script type="module" src="./app.js"></script>
   </body>
