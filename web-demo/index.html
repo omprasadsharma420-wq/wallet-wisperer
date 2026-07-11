@@ -22,7 +22,7 @@
         <nav class="nav" aria-label="Primary">
           <button class="nav-item active" data-view="capture"><i data-lucide="sparkles"></i><span>Capture</span></button>
           <button class="nav-item" data-view="money"><i data-lucide="sliders-horizontal"></i><span>Expense and Income</span></button>
-          <button class="nav-item" data-view="review"><i data-lucide="inbox"></i><span>Review</span><strong id="reviewBadge" class="nav-badge hidden">0</strong></button>
+          <button class="nav-item" data-view="review"><i data-lucide="moon-star"></i><span>Close</span><strong id="reviewBadge" class="nav-badge hidden">0</strong></button>
           <button class="nav-item" data-view="stats"><i data-lucide="line-chart"></i><span>Stats</span></button>
         </nav>
       </aside>
@@ -43,9 +43,9 @@
         <section id="nudgeBar" class="nudge-bar hidden">
           <div>
             <p class="eyebrow">Tonight</p>
-            <strong id="nudgeCopy">Review tonight?</strong>
+            <strong id="nudgeCopy">Close the day?</strong>
           </div>
-          <button id="nudgeReviewBtn" class="secondary"><i data-lucide="inbox"></i><span>Review</span></button>
+          <button id="nudgeReviewBtn" class="secondary"><i data-lucide="moon-star"></i><span>Close</span></button>
         </section>
 
         <section class="view active" id="view-capture">
@@ -75,7 +75,7 @@
                   <h3>Drop a money clue</h3>
                   <p class="soft-line">Type it, paste a bank message, or attach a receipt. Drafts only, you approve everything tonight.</p>
                 </div>
-                <button id="nightlyBtn" class="ghost"><i data-lucide="moon"></i><span>Nightly Review</span></button>
+                <button id="nightlyBtn" class="ghost"><i data-lucide="moon"></i><span>Close the Day</span></button>
               </div>
               <p class="soft-line" id="nightlyLine">No captured transactions yet.</p>
               <textarea id="captureInput" placeholder="250 momo"></textarea>
@@ -154,23 +154,7 @@
         </section>
 
         <section class="view" id="view-review">
-          <div class="hero-band">
-            <div>
-              <p class="eyebrow">Smart Capture Inbox</p>
-              <h3 id="reviewLine">Load tonight's drafts.</h3>
-            </div>
-            <div class="button-row compact">
-              <button id="recurringBtn" class="secondary"><i data-lucide="calendar-clock"></i><span>Fixed Cards</span></button>
-              <button id="loadReviewBtn"><i data-lucide="inbox"></i><span>Load Review</span></button>
-            </div>
-          </div>
-
-          <section class="draft-list" id="draftList"></section>
-          <section id="confirmationPanel" class="confirmation-panel hidden"></section>
-          <div class="button-row sticky-actions">
-            <button id="confirmSelectedBtn"><i data-lucide="check"></i><span>Confirm Selected</span></button>
-            <button id="ignoreSelectedBtn" class="secondary"><i data-lucide="x"></i><span>Ignore Selected</span></button>
-          </div>
+          <section id="closeDayStage" class="close-day-stage" aria-live="polite"></section>
         </section>
 
         <section class="view" id="view-stats">

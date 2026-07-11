@@ -4,6 +4,7 @@ const DEFAULT_URL = "https://lzbtttgggoxumbcjqqsu.supabase.co";
 const DEFAULT_PUBLIC_KEY = "sb_publishable_v5pAWpqrnyLyEMlNeaZPAg_4xah6LqS";
 const CATEGORY_STORAGE_KEY = "ww_category_targets";
 const AUTOFILE_STORAGE_KEY = "ww_autofile_bills";
+const CLOSE_DAY_STORAGE_PREFIX = "ww_close_day_";
 const PLACEHOLDER_EXAMPLES = ["250 momo", "rent 4000", "skipped coffee 150", "paste your bank SMS here"];
 
 const CURRENCIES = [
@@ -159,6 +160,12 @@ const state = {
   categoryBudgets: [],
   selectedCategoryId: "phone-internet",
   pendingExpenseAmounts: {},
+  closeStage: "invite",
+  closeIndex: 0,
+  closeDecisions: {},
+  closeLastAction: null,
+  goalPromptShown: false,
+  closeReportInsight: "",
   captureAttachment: null,
   selectedPaymentMethod: null,
   goalPhotoFile: null,
@@ -181,6 +188,7 @@ const els = {
   nudgeCopy: $("#nudgeCopy"),
   draftList: $("#draftList"),
   confirmationPanel: $("#confirmationPanel"),
+  closeDayStage: $("#closeDayStage"),
   goalStatus: $("#goalStatus"),
   goalPreview: $("#goalPreview"),
   incomeList: $("#incomeList"),
@@ -1162,7 +1170,7 @@ async function nightlyReview(queueNotification) {
   state.drafts = data.drafts || [];
   state.pendingCount = data.pending_count || 0;
   els.nightlyLine.textContent = data.notification?.full_text || "No captured transactions yet.";
-  els.reviewLine.textContent = data.notification?.full_text || "Nothing to review yet, log something today and it'll wait for you here.";
+  if (els.reviewLine) els.reviewLine.textContent = data.notification?.full_text || "Nothing to review yet, log something today and it'll wait for you here.";
   if (els.reviewBadge) {
     els.reviewBadge.textContent = String(state.pendingCount);
     els.reviewBadge.classList.toggle("hidden", state.pendingCount === 0);
@@ -1171,6 +1179,41 @@ async function nightlyReview(queueNotification) {
   renderGoal();
   renderNudge(data.notification);
   renderDrafts();
+}
+
+function closeDayStorageKey() {
+  return `${CLOSE_DAY_STORAGE_PREFIX}${today()}`;
+}
+
+function saveCloseProgress() {
+  localStorage.setItem(closeDayStorageKey(), JSON.stringify({
+    stage: state.closeStage,
+    index: state.closeIndex,
+    decisions: state.closeDecisions,
+  }));
+}
+
+function restoreCloseProgress() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(closeDayStorageKey()) || "{}");
+    state.closeStage = saved.stage || "invite";
+    state.closeIndex = Number(saved.index || 0);
+    state.closeDecisions = saved.decisions || {};
+  } catch (_error) {
+    state.closeStage = "invite";
+    state.closeIndex = 0;
+    state.closeDecisions = {};
+  }
+  state.closeIndex = Math.min(Math.max(0, state.closeIndex), Math.max(0, state.drafts.length - 1));
+}
+
+async function enterCloseDay() {
+  if (state.session) {
+    await generateRecurringDrafts({ silent: true });
+    await nightlyReview(false);
+  }
+  restoreCloseProgress();
+  renderCloseDayStage();
 }
 
 async function generateRecurringDrafts({ silent = false } = {}) {
@@ -1261,7 +1304,318 @@ function renderNudge(notification) {
   els.nudgeBar.classList.remove("hidden");
 }
 
+function closeDayTally() {
+  return Object.values(state.closeDecisions).reduce((totals, decision) => {
+    const amount = Number(decision.transaction?.amount || decision.amount || 0);
+    if (decision.tag === "skipped") totals.protected += amount;
+    else if (decision.tag === "spent" || decision.tag === "needed" || decision.tag === "fixed") totals.spent += amount;
+    return totals;
+  }, { spent: 0, protected: 0 });
+}
+
+function draftTitle(draft) {
+  return draft?.parsed_merchant || draft?.parsed_category || "Possible transaction";
+}
+
+function draftSourceLabel(draft) {
+  if (draft?.parsed_necessity === "fixed" || draft?.source === "recurring") return "auto-filed bill";
+  if (draft?.source === "screenshot") return "receipt";
+  if (draft?.source === "manual") return "typed";
+  return draft?.source || "captured";
+}
+
+function progressDots() {
+  return state.drafts.map((draft, index) => {
+    const done = Boolean(state.closeDecisions[draft.id]);
+    const active = index === state.closeIndex;
+    return `<i class="${done ? "done" : ""} ${active ? "active" : ""}"></i>`;
+  }).join("");
+}
+
+function renderCloseDayStage() {
+  if (!els.closeDayStage) return;
+  if (els.reviewBadge) {
+    els.reviewBadge.textContent = String(state.pendingCount || state.drafts.length);
+    els.reviewBadge.classList.toggle("hidden", (state.pendingCount || state.drafts.length) === 0);
+  }
+
+  if (state.closeStage === "report" && state.report) {
+    renderCloseReportStage();
+    return;
+  }
+
+  if (state.closeStage === "cards" && state.drafts.length) {
+    renderCloseCardStage();
+    return;
+  }
+
+  renderCloseInviteStage();
+}
+
+function renderCloseInviteStage() {
+  const count = state.drafts.length;
+  const streak = state.streak?.current_count ? `${state.streak.current_count}-day streak` : "Start a streak tonight";
+  els.closeDayStage.innerHTML = `
+    <section class="ritual-card invite-card">
+      <span class="ritual-mark"><i data-lucide="${count ? "sparkles" : "moon"}"></i></span>
+      <h3>${count ? `${count} ${count === 1 ? "thing" : "things"} happened today.` : "Quiet day."}</h3>
+      <p>${count ? "Take 30 seconds to close it out." : "Nothing captured. Log anything you spent, or close out clean."}</p>
+      ${count ? "" : `
+        <div class="quiet-composer">
+          <textarea id="closeQuickInput" placeholder="250 momo"></textarea>
+          <button id="closeQuickSaveBtn" class="secondary" type="button"><i data-lucide="plus"></i><span>Save clue</span></button>
+        </div>
+      `}
+      <button id="startCloseDayBtn" type="button"><i data-lucide="${count ? "play" : "check"}"></i><span>${count ? "Close today" : "Close out clean"}</span></button>
+      <small class="streak-line"><i data-lucide="flame"></i><span>${escapeHtml(streak)}</span></small>
+    </section>
+  `;
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function renderCloseCardStage() {
+  const draft = state.drafts[state.closeIndex] || state.drafts[0];
+  if (!draft) {
+    state.closeStage = "invite";
+    renderCloseInviteStage();
+    return;
+  }
+  const decision = state.closeDecisions[draft.id];
+  const code = draft.parsed_currency || state.profile?.default_currency || "NPR";
+  const amount = Number(decision?.amount ?? draft.parsed_amount ?? 0);
+  const category = decision?.category ?? draft.parsed_category ?? "Uncategorized";
+  const isFixed = draft.parsed_necessity === "fixed" || draft.source === "recurring";
+  const tally = closeDayTally();
+  els.closeDayStage.innerHTML = `
+    <section class="close-flow">
+      <div class="close-progress" aria-label="Close the Day progress">${progressDots()}</div>
+      <div class="session-summary"><span>Spent ${money(tally.spent, code)}</span><span>Protected ${money(tally.protected, code)}</span></div>
+      <article class="ritual-card review-card ${isFixed ? "bill-card" : ""}">
+        ${isFixed ? "<span class=\"bill-tag\">Bill</span>" : ""}
+        <span class="source-tag">${escapeHtml(draftSourceLabel(draft))}</span>
+        <h3>${escapeHtml(draftTitle(draft))}</h3>
+        <strong class="card-amount">${money(amount, code)}</strong>
+        <div class="inline-edit">
+          <label>Amount<input id="cardAmountInput" type="number" min="0" step="0.01" value="${escapeAttr(amount || "")}"></label>
+          <label>Category<select id="cardCategoryInput">
+            ${["Food", "Transport", "Bills", "Groceries", "Subscriptions", "Flexible", "Shopping", "Health", "Education", "Uncategorized"].map((item) => option(item, category)).join("")}
+          </select></label>
+        </div>
+        ${decision ? closeDecisionRevealHtml(decision, draft, code) : isFixed ? fixedDecisionButtonsHtml() : decisionButtonsHtml(draft)}
+        ${state.closeLastAction?.draftId === draft.id ? "<button id=\"undoCloseActionBtn\" class=\"ghost undo-btn\" type=\"button\"><i data-lucide=\"undo-2\"></i><span>Undo last tap</span></button>" : ""}
+      </article>
+    </section>
+  `;
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function decisionButtonsHtml(draft) {
+  if (draft.suggested_recurring && isAutoFileBillsEnabled()) {
+    return `
+      <div class="decision-stack">
+        <p class="draft-meta">Add '${escapeHtml(draftTitle(draft))}' as a monthly bill?</p>
+        <button class="decision-btn" data-close-action="needed" data-create-recurring="true" type="button"><i data-lucide="repeat"></i><span>Track monthly</span></button>
+        <button class="decision-btn secondary" data-close-action="needed" data-create-recurring="false" type="button"><i data-lucide="dot"></i><span>Just this once</span></button>
+      </div>
+    `;
+  }
+  return `
+    <div class="decision-stack">
+      <button class="decision-btn" data-close-action="spent" type="button"><i data-lucide="receipt"></i><span>Spent</span></button>
+      <button class="decision-btn secondary" data-close-action="needed" type="button"><i data-lucide="shield-check"></i><span>Needed</span></button>
+      <button class="decision-btn mint" data-close-action="skipped" type="button"><i data-lucide="piggy-bank"></i><span>Skipped</span></button>
+    </div>
+  `;
+}
+
+function fixedDecisionButtonsHtml() {
+  return `
+    <div class="decision-stack">
+      <button class="decision-btn" data-close-action="fixed" type="button"><i data-lucide="check"></i><span>Confirm</span></button>
+    </div>
+  `;
+}
+
+function closeDecisionRevealHtml(decision, draft, code) {
+  const title = draftTitle(draft);
+  if (decision.tag === "skipped") {
+    const percent = state.goal?.target_amount ? pct((Number(state.goal.current_saved_amount || 0) + Number(decision.amount || 0)) / Number(state.goal.target_amount) * 100) : 0;
+    return `
+      <div class="decision-reveal protected-reveal">
+        <strong>${money(decision.amount, code)} protected.</strong>
+        <div class="progress goal-pulse"><span style="width:${percent}%"></span></div>
+      </div>
+      ${nextCloseButtonHtml()}
+    `;
+  }
+  if (decision.tag === "spent" && decision.transaction?.goal_percent !== null && decision.transaction?.goal_percent !== undefined) {
+    return `
+      <div class="decision-reveal rival-reveal">
+        ${goalThumbHtml()}
+        <strong>That's ${Number(decision.transaction.goal_percent).toFixed(1)}% of ${escapeHtml(state.goal?.name || "your goal")}.</strong>
+      </div>
+      ${nextCloseButtonHtml()}
+    `;
+  }
+  if (decision.tag === "spent" && !state.goal && !state.goalPromptShown) {
+    state.goalPromptShown = true;
+    return `
+      <div class="decision-reveal">
+        <button id="openGoalFromCloseBtn" class="ghost" type="button">Set a goal and you'll see what each spend costs you.</button>
+      </div>
+      ${nextCloseButtonHtml()}
+    `;
+  }
+  return `
+    <div class="decision-reveal quiet-reveal">
+      <strong>${decision.tag === "fixed" ? `${escapeHtml(title)} confirmed.` : "Logged without goal pressure."}</strong>
+    </div>
+    ${nextCloseButtonHtml()}
+  `;
+}
+
+function goalThumbHtml() {
+  if (state.goalPhotoUrl) return `<img class="goal-thumb" src="${escapeAttr(state.goalPhotoUrl)}" alt="">`;
+  return `<span class="goal-thumb">${escapeHtml((state.goal?.name || "G").slice(0, 1).toUpperCase())}</span>`;
+}
+
+function nextCloseButtonHtml() {
+  const last = state.closeIndex >= state.drafts.length - 1;
+  return `<button id="nextCloseCardBtn" type="button"><span>${last ? "Finish the day" : "Next"}</span><i data-lucide="arrow-right"></i></button>`;
+}
+
+async function handleCloseDecision(tag, createRecurring = false) {
+  const draft = state.drafts[state.closeIndex];
+  if (!draft || state.closeDecisions[draft.id]) return;
+  const amount = Number($("#cardAmountInput")?.value || draft.parsed_amount || 0);
+  const category = $("#cardCategoryInput")?.value || draft.parsed_category || "Uncategorized";
+  if (!amount || amount <= 0) throw new Error("Add a positive amount before closing this card.");
+
+  const necessity = tag === "needed" ? "needed" : tag === "fixed" ? "fixed" : "flexible";
+  const edits = {
+    [draft.id]: {
+      amount,
+      currency: currency(draft.parsed_currency || state.profile?.default_currency || "NPR"),
+      merchant: draft.parsed_merchant || draft.parsed_category || "Transaction",
+      category,
+      kind: draft.parsed_kind || "expense",
+      necessity,
+      payment_method: draft.parsed_payment_method || "unknown",
+      is_skipped_opportunity: tag === "skipped",
+      create_recurring: Boolean(createRecurring),
+    },
+  };
+
+  const data = await invoke("confirm-drafts", { confirm_ids: [draft.id], edits });
+  const transaction = data.confirmed_transactions?.[0] || null;
+  state.lastConfirmations = [...state.lastConfirmations, ...(transaction ? [transaction] : [])];
+  state.closeDecisions[draft.id] = {
+    tag,
+    amount,
+    category,
+    transaction,
+    recurring_count: data.recurring_count || 0,
+  };
+  state.closeLastAction = { draftId: draft.id, transactionId: transaction?.id || null };
+  state.pendingCount = Math.max(0, state.pendingCount - 1);
+  if (data.recurring_count > 0) await loadRecurringExpenses();
+  saveCloseProgress();
+  renderCloseDayStage();
+}
+
+async function undoCloseAction() {
+  const action = state.closeLastAction;
+  if (!action?.draftId) return;
+  const decision = state.closeDecisions[action.draftId];
+  if (action.transactionId) {
+    const { error: deleteError } = await requireClient().from("transactions").delete().eq("id", action.transactionId);
+    if (deleteError) throw deleteError;
+  }
+  const { error: draftError } = await requireClient()
+    .from("smart_capture_drafts")
+    .update({ status: "draft", needs_review: true })
+    .eq("id", action.draftId);
+  if (draftError) throw draftError;
+  delete state.closeDecisions[action.draftId];
+  state.closeLastAction = null;
+  state.lastConfirmations = state.lastConfirmations.filter((tx) => tx.id !== action.transactionId);
+  state.pendingCount += 1;
+  if (decision?.recurring_count > 0) await loadRecurringExpenses();
+  saveCloseProgress();
+  showAlert("Undone. You can choose again.");
+  await nightlyReview(false);
+  renderCloseDayStage();
+}
+
+async function nextCloseCard() {
+  if (state.closeIndex < state.drafts.length - 1) {
+    state.closeIndex += 1;
+    saveCloseProgress();
+    renderCloseDayStage();
+    return;
+  }
+  await finishCloseDay();
+}
+
+async function finishCloseDay() {
+  const data = await invoke("close-day", {
+    report_date: today(),
+    timezone: state.profile?.timezone || detectedTimezone(),
+  });
+  state.report = data.report;
+  state.streak = data.streak;
+  state.closeStage = "report";
+  state.closeReportInsight = pickCloseInsight(data.report, data.streak);
+  localStorage.removeItem(closeDayStorageKey());
+  renderReport();
+  renderCloseDayStage();
+}
+
+function pickCloseInsight(report, streak) {
+  const code = currency(report?.currency || state.profile?.default_currency || state.goal?.currency || "NPR");
+  const candidates = [];
+  if (state.goal && Number(report?.goal_delta_percent || 0) !== 0) candidates.push({ weight: 3, text: `Today was ${Math.abs(Number(report.goal_delta_percent)).toFixed(1)}% of ${state.goal.name}.` });
+  if (Number(report?.protected_amount || 0) > 0) candidates.push({ weight: 4, text: `You protected ${money(report.protected_amount, code)} today.` });
+  if (streak?.current_count) candidates.push({ weight: 3, text: `${streak.current_count} days of honest logging.` });
+  if (state.lastConfirmations.length >= 7) candidates.push({ weight: 1, text: "A pattern is starting to show. Keep closing the day to make it clearer." });
+  candidates.push({ weight: 2, text: report?.insight || "You made today visible." });
+  const expanded = candidates.flatMap((item) => Array.from({ length: item.weight }, () => item.text));
+  return expanded[Math.floor(Math.random() * expanded.length)] || "You made today visible.";
+}
+
+function renderCloseReportStage() {
+  const report = state.report;
+  const code = currency(report?.currency || state.profile?.default_currency || state.goal?.currency || "NPR");
+  const spent = Number(report?.total_spent || 0);
+  const protectedAmount = Number(report?.protected_amount || 0);
+  const streakCount = state.streak?.current_count || 1;
+  const goalPercent = state.goal?.target_amount ? pct((Number(state.goal.current_saved_amount || 0) + protectedAmount) / Number(state.goal.target_amount) * 100) : 0;
+  els.closeDayStage.innerHTML = `
+    <section class="ritual-card report-card">
+      <span class="ritual-mark success"><i data-lucide="check"></i></span>
+      <h3>You closed today.</h3>
+      <p class="streak-count">${streakCount}-day streak</p>
+      <div class="report-figures">
+        <div><span>Spent</span><strong>${money(spent, code)}</strong></div>
+        <div class="protected-figure"><span>Protected</span><strong>${money(protectedAmount, code)}</strong></div>
+      </div>
+      ${state.goal ? `
+        <div class="goal-movement">
+          <span>${escapeHtml(state.goal.name)} is ${Math.abs(Number(report?.goal_delta_percent || 0)).toFixed(1)}% closer.</span>
+          <div class="progress goal-pulse"><span style="width:${goalPercent}%"></span></div>
+        </div>
+      ` : ""}
+      <p class="insight-line">${escapeHtml(state.closeReportInsight || pickCloseInsight(report, state.streak))}</p>
+      ${state.streak?.freezes_available === 0 ? "<small class=\"draft-meta\">We kept your streak. Everyone misses a day.</small>" : ""}
+      <button id="seeTomorrowBtn" type="button"><span>See you tomorrow.</span><i data-lucide="sunrise"></i></button>
+    </section>
+  `;
+  if (window.lucide) window.lucide.createIcons();
+}
+
 function renderDrafts() {
+  renderCloseDayStage();
+  if (!els.draftList) return;
   if (els.reviewBadge) {
     els.reviewBadge.textContent = String(state.pendingCount || state.drafts.length);
     els.reviewBadge.classList.toggle("hidden", (state.pendingCount || state.drafts.length) === 0);
@@ -1382,6 +1736,7 @@ function rivalTradeoffHtml({ amount, currency: code, kind, necessity, skipped })
 }
 
 function renderConfirmations() {
+  if (!els.confirmationPanel) return;
   if (!state.lastConfirmations.length) {
     els.confirmationPanel.classList.add("hidden");
     els.confirmationPanel.innerHTML = "";
@@ -1497,10 +1852,11 @@ function switchView(view) {
   const titles = {
     capture: "Smart Capture",
     money: "",
-    review: "Nightly Review",
+    review: "Close the Day",
     stats: "Stats",
   };
   els.viewTitle.textContent = titles[view] ?? "Wallet Whisperer";
+  if (view === "review") guard(enterCloseDay);
 }
 
 function switchMoneyTab(tab) {
@@ -1623,10 +1979,6 @@ function bindEvents() {
   });
   $("#nightlyBtn").addEventListener("click", () => guard(() => nightlyReview(true)));
   $("#nudgeReviewBtn").addEventListener("click", () => switchView("review"));
-  $("#loadReviewBtn").addEventListener("click", () => guard(() => nightlyReview(false)));
-  $("#recurringBtn").addEventListener("click", () => guard(() => generateRecurringDrafts({ silent: false })));
-  $("#confirmSelectedBtn").addEventListener("click", () => guard(confirmSelected));
-  $("#ignoreSelectedBtn").addEventListener("click", () => guard(ignoreSelected));
   $("#closeDayBtn").addEventListener("click", () => guard(closeDay));
   $("#refreshBtn").addEventListener("click", () => guard(async () => {
     if (state.session) {
@@ -1682,11 +2034,59 @@ function bindEvents() {
     const deleteButton = event.target.closest("[data-income-delete]");
     if (deleteButton) guard(() => deleteIncomeSource(deleteButton.dataset.incomeDelete));
   });
-  els.draftList.addEventListener("input", (event) => {
+  els.closeDayStage?.addEventListener("click", (event) => {
+    const start = event.target.closest("#startCloseDayBtn");
+    if (start) {
+      if (state.drafts.length) {
+        state.closeStage = "cards";
+        state.closeIndex = 0;
+        saveCloseProgress();
+        renderCloseDayStage();
+      } else {
+        guard(finishCloseDay);
+      }
+      return;
+    }
+    const quickSave = event.target.closest("#closeQuickSaveBtn");
+    if (quickSave) {
+      guard(async () => {
+        const text = $("#closeQuickInput").value.trim();
+        if (!text) throw new Error("Add a money clue first.");
+        await createDraft("manual", text);
+        await enterCloseDay();
+        state.closeStage = "cards";
+        state.closeIndex = Math.max(0, state.drafts.length - 1);
+        saveCloseProgress();
+        renderCloseDayStage();
+      });
+      return;
+    }
+    const decision = event.target.closest("[data-close-action]");
+    if (decision) {
+      guard(() => handleCloseDecision(decision.dataset.closeAction, decision.dataset.createRecurring === "true"));
+      return;
+    }
+    if (event.target.closest("#nextCloseCardBtn")) {
+      guard(nextCloseCard);
+      return;
+    }
+    if (event.target.closest("#undoCloseActionBtn")) {
+      guard(undoCloseAction);
+      return;
+    }
+    if (event.target.closest("#openGoalFromCloseBtn")) {
+      openGoalModal();
+      return;
+    }
+    if (event.target.closest("#seeTomorrowBtn")) {
+      switchView("capture");
+    }
+  });
+  els.draftList?.addEventListener("input", (event) => {
     const id = event.target?.dataset?.draft;
     if (id) updateDraftTradeoff(id);
   });
-  els.draftList.addEventListener("change", (event) => {
+  els.draftList?.addEventListener("change", (event) => {
     const id = event.target?.dataset?.draft;
     if (id) updateDraftTradeoff(id);
   });

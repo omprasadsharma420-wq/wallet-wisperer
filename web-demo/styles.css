@@ -1392,6 +1392,277 @@ label {
   gap: 12px;
 }
 
+.close-day-stage {
+  min-height: min(680px, calc(100vh - 150px));
+  display: grid;
+  place-items: center;
+  padding: 18px 0;
+}
+
+.close-flow {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.ritual-card {
+  width: min(560px, 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(2, 195, 154, 0.12), transparent 34%),
+    var(--surface);
+  padding: clamp(22px, 4vw, 34px);
+  display: grid;
+  gap: 16px;
+  text-align: center;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+  animation: cardIn var(--dur-med) var(--ease-out);
+}
+
+.ritual-card h3 {
+  margin: 0;
+  font-size: clamp(28px, 5vw, 44px);
+  line-height: 1.04;
+  letter-spacing: 0;
+}
+
+.ritual-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.ritual-mark,
+.source-tag,
+.bill-tag,
+.streak-line {
+  justify-self: center;
+}
+
+.ritual-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ritual-mark.success {
+  color: #06211d;
+  background: var(--mint-400);
+}
+
+.quiet-composer {
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+
+.quiet-composer textarea {
+  min-height: 92px;
+}
+
+.streak-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.close-progress {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+}
+
+.close-progress i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.close-progress i.done,
+.close-progress i.active {
+  background: var(--mint-400);
+}
+
+.close-progress i.active {
+  box-shadow: 0 0 18px rgba(2, 195, 154, 0.5);
+}
+
+.session-summary {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 7px 12px;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.review-card {
+  text-align: left;
+}
+
+.review-card h3,
+.review-card .source-tag,
+.review-card .bill-tag {
+  justify-self: start;
+}
+
+.source-tag {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 5px 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.review-card.bill-card {
+  border-color: rgba(217, 164, 65, 0.42);
+}
+
+.card-amount {
+  font-size: clamp(28px, 5vw, 42px);
+  font-variant-numeric: tabular-nums;
+}
+
+.inline-edit {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.decision-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.decision-btn {
+  width: 100%;
+  justify-content: center;
+  min-height: 54px;
+  font-size: 16px;
+}
+
+.decision-btn.mint {
+  background: var(--mint-400);
+  color: #06211d;
+}
+
+.decision-reveal {
+  border: 1px solid var(--accent-soft-border);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  animation: revealUp var(--dur-med) var(--ease-out);
+}
+
+.protected-reveal,
+.quiet-reveal {
+  color: var(--ink);
+}
+
+.rival-reveal {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.goal-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+  color: var(--accent);
+  font-weight: 850;
+}
+
+.goal-pulse span {
+  animation: goalPulse var(--dur-slow) var(--ease-out);
+}
+
+.undo-btn {
+  justify-self: start;
+}
+
+.report-card {
+  text-align: center;
+}
+
+.streak-count {
+  color: var(--accent) !important;
+  font-weight: 850;
+}
+
+.report-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-figures div {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  padding: 14px;
+  display: grid;
+  gap: 5px;
+}
+
+.report-figures span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.report-figures strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.protected-figure strong,
+.insight-line {
+  color: var(--mint-400);
+}
+
+.goal-movement {
+  display: grid;
+  gap: 9px;
+  color: var(--muted);
+  font-weight: 750;
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes revealUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes goalPulse {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.45); }
+  100% { filter: brightness(1); }
+}
+
 .draft-card {
   padding: 14px;
   display: grid;
@@ -1710,6 +1981,30 @@ label {
 
   .expense-row-editor {
     grid-template-columns: 1fr;
+  }
+
+  .close-day-stage {
+    min-height: calc(100vh - 190px);
+    padding: 8px 0 18px;
+    place-items: start center;
+  }
+
+  .ritual-card {
+    padding: 20px;
+  }
+
+  .inline-edit,
+  .report-figures {
+    grid-template-columns: 1fr;
+  }
+
+  .session-summary {
+    display: grid;
+    border-radius: var(--radius-md);
+  }
+
+  .decision-btn {
+    min-height: 56px;
   }
 
   .goal-row,
